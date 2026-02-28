@@ -107,12 +107,17 @@ class DocumentIndex:
         return results[:10]
 
     def get_latest(self, doc_type: str, repo: Optional[str] = None) -> Optional[DocumentRecord]:
+        candidates = []
         for doc in self._docs.values():
             if doc.doc_type == doc_type:
                 if repo and doc.repo != repo:
                     continue
-                return doc
-        return None
+                candidates.append(doc)
+        if not candidates:
+            return None
+        # Prefer documents with checkpoint codes, then by word count (larger = more canonical)
+        candidates.sort(key=lambda d: (d.checkpoint_code is not None, d.word_count), reverse=True)
+        return candidates[0]
 
     def get_checkpoints(self) -> dict:
         result = {}
