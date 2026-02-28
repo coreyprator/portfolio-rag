@@ -22,6 +22,8 @@ def infer_doc_type(path: str) -> str:
         return DOC_TYPE_MAP[filename]
     if filename.startswith("SESSION_CLOSEOUT"):
         return "closeout"
+    if filename.startswith("CC_Bootstrap"):
+        return "bootstrap"
     return "other"
 
 

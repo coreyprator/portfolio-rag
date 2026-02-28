@@ -24,7 +24,7 @@ CANONICAL_FILES = {
     "CLAUDE.md",
 }
 
-CANONICAL_PREFIXES = ["SESSION_CLOSEOUT"]
+CANONICAL_PREFIXES = ["SESSION_CLOSEOUT", "CC_Bootstrap"]
 
 IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv"}
 
