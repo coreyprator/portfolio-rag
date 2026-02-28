@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Portfolio RAG",
-    description="Document retrieval service for CC sessions. Indexes canonical documents from all portfolio repos.",
+    description="Document retrieval service for CC sessions. Indexes all text files from portfolio repos.",
     version=settings.VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -32,7 +32,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -67,6 +67,7 @@ async def health_check():
         "build": settings.BUILD,
         "documents": stats["document_count"],
         "repos_indexed": len(stats["repos_indexed"]),
+        "doc_types": stats["doc_types"],
         "last_ingest": stats["last_ingest"],
     }
 
@@ -79,15 +80,20 @@ async def root():
         "docs": "/docs",
         "endpoints": [
             "GET /health",
+            "GET /documents?repo=&doc_type=&has_checkpoint=&extension=&path_contains=",
+            "GET /latest/all",
             "GET /latest/{doc_type}?repo=",
             "GET /document/{repo}/{path}",
             "GET /query?q=&repo=",
             "GET /checkpoints",
-            "POST /ingest/{repo}",
             "POST /ingest/all",
+            "POST /ingest/{repo}",
             "POST /webhook/github",
             "POST /prompts",
             "GET /prompts/{id}",
+            "GET /prompts/active",
+            "PATCH /prompts/{id}",
+            "GET /prompts?project=&status=",
             "POST /artifacts/{sprint_id}",
             "GET /artifacts/{sprint_id}",
         ],
@@ -105,7 +111,7 @@ async def startup_ingest():
     total = 0
     for repo in settings.REPOS:
         try:
-            docs = await client.fetch_canonical_docs(repo)
+            docs = await client.fetch_repo_docs(repo)
             for doc in docs:
                 document_index.add(doc)
             total += len(docs)

@@ -1,11 +1,13 @@
 """In-memory document index with keyword search."""
 
+import os
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Optional
 
 
+# Exact filename -> doc_type
 DOC_TYPE_MAP = {
     "PROJECT_KNOWLEDGE.md": "pk",
     "INTENT.md": "intent",
@@ -15,15 +17,62 @@ DOC_TYPE_MAP = {
     "CLAUDE.md": "claude",
 }
 
+# Extensions -> doc_type for non-canonical files
+SOURCE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css"}
+CONFIG_EXTENSIONS = {".json", ".yaml", ".yml", ".toml", ".cfg"}
+SCRIPT_EXTENSIONS = {".sh", ".ps1"}
+
 
 def infer_doc_type(path: str) -> str:
+    """Infer document type from file path and name."""
     filename = path.rsplit("/", 1)[-1] if "/" in path else path
+    _, ext = os.path.splitext(filename)
+
+    # Exact filename matches first
     if filename in DOC_TYPE_MAP:
         return DOC_TYPE_MAP[filename]
+
+    # Content-based filename matches (handles "Harmony Lab PROJECT_KNOWLEDGE.md" etc.)
+    if "PROJECT_KNOWLEDGE" in filename:
+        return "pk"
+
+    # Prefix-based matches
     if filename.startswith("SESSION_CLOSEOUT"):
         return "closeout"
-    if filename.startswith("CC_Bootstrap"):
+    if "bootstrap" in filename.lower():
         return "bootstrap"
+    if filename.startswith("INTENT"):
+        return "intent"
+    if filename.startswith("CC_") and ext == ".md":
+        return "prompt"
+
+    # Path-based matches
+    path_lower = path.lower()
+    if "/prompts/" in path_lower:
+        return "prompt"
+    if "migration" in path_lower:
+        return "migration"
+    if "template" in path_lower:
+        return "template"
+
+    # Config files (exact names)
+    if filename in ("Dockerfile", ".gitignore", "Procfile") or filename.startswith(".env"):
+        return "config"
+
+    # Extension-based matches
+    if ext in CONFIG_EXTENSIONS:
+        return "config"
+    if ext in SOURCE_EXTENSIONS:
+        return "source"
+    if ext in SCRIPT_EXTENSIONS:
+        return "script"
+    if ext == ".sql":
+        return "sql"
+    if ext == ".md":
+        return "docs"
+    if ext == ".txt":
+        return "docs"
+
     return "other"
 
 
@@ -44,6 +93,36 @@ def extract_version(content: str) -> Optional[str]:
     return None
 
 
+def compute_freshness(last_updated: str, stale_threshold_hours: int = 24) -> dict:
+    """Compute freshness metadata for a document."""
+    try:
+        last = datetime.fromisoformat(last_updated)
+        now = datetime.now(timezone.utc)
+        age_seconds = (now - last).total_seconds()
+        age_minutes = int(age_seconds / 60)
+    except (ValueError, TypeError):
+        return {
+            "age_minutes": -1,
+            "age_human": "unknown",
+            "is_stale": True,
+            "stale_threshold_hours": stale_threshold_hours,
+        }
+
+    if age_minutes < 60:
+        age_human = f"{age_minutes} minutes ago"
+    elif age_minutes < 1440:
+        age_human = f"{age_minutes // 60} hours ago"
+    else:
+        age_human = f"{age_minutes // 1440} days ago"
+
+    return {
+        "age_minutes": age_minutes,
+        "age_human": age_human,
+        "is_stale": age_minutes > stale_threshold_hours * 60,
+        "stale_threshold_hours": stale_threshold_hours,
+    }
+
+
 @dataclass
 class DocumentRecord:
     repo: str
@@ -55,6 +134,8 @@ class DocumentRecord:
     last_updated: str = ""
     commit_sha: Optional[str] = None
     word_count: int = 0
+    file_extension: str = ""
+    size_bytes: int = 0
 
     def to_dict(self, include_content: bool = True) -> dict:
         d = asdict(self)
@@ -128,6 +209,74 @@ class DocumentIndex:
                     "path": doc.path,
                     "doc_type": doc.doc_type,
                 }
+        return result
+
+    def list_documents(
+        self,
+        repo: Optional[str] = None,
+        doc_type: Optional[str] = None,
+        has_checkpoint: Optional[bool] = None,
+        extension: Optional[str] = None,
+        path_contains: Optional[str] = None,
+    ) -> list[dict]:
+        """List all documents matching filters. Returns metadata only (no content)."""
+        results = []
+        for doc in self._docs.values():
+            if repo and doc.repo != repo:
+                continue
+            if doc_type and doc.doc_type != doc_type:
+                continue
+            if has_checkpoint is True and not doc.checkpoint_code:
+                continue
+            if has_checkpoint is False and doc.checkpoint_code:
+                continue
+            if extension and doc.file_extension != extension:
+                continue
+            if path_contains and path_contains.lower() not in doc.path.lower():
+                continue
+            results.append(doc.to_dict(include_content=False))
+        results.sort(key=lambda d: (d["repo"], d["path"]))
+        return results
+
+    def get_all_latest(self) -> dict:
+        """Get the latest document of each type across all repos.
+        For per-repo types (pk, intent, etc.), returns nested by repo.
+        For global types (bootstrap), returns single entry."""
+        # Collect all doc_types present
+        type_repo_docs: dict[str, dict[str, DocumentRecord]] = {}
+        for doc in self._docs.values():
+            if doc.doc_type not in type_repo_docs:
+                type_repo_docs[doc.doc_type] = {}
+            repo_key = doc.repo
+            existing = type_repo_docs[doc.doc_type].get(repo_key)
+            if existing is None or (
+                (doc.checkpoint_code is not None, doc.word_count)
+                > (existing.checkpoint_code is not None, existing.word_count)
+            ):
+                type_repo_docs[doc.doc_type][repo_key] = doc
+
+        result = {}
+        for doc_type, repo_docs in sorted(type_repo_docs.items()):
+            if len(repo_docs) == 1:
+                doc = list(repo_docs.values())[0]
+                result[doc_type] = {
+                    "repo": doc.repo,
+                    "path": doc.path,
+                    "checkpoint_code": doc.checkpoint_code,
+                    "last_updated": doc.last_updated,
+                    "word_count": doc.word_count,
+                    "freshness": compute_freshness(doc.last_updated),
+                }
+            else:
+                result[doc_type] = {}
+                for repo_name, doc in sorted(repo_docs.items()):
+                    result[doc_type][repo_name] = {
+                        "path": doc.path,
+                        "checkpoint_code": doc.checkpoint_code,
+                        "last_updated": doc.last_updated,
+                        "word_count": doc.word_count,
+                        "freshness": compute_freshness(doc.last_updated),
+                    }
         return result
 
     def clear_repo(self, repo: str):

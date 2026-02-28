@@ -19,30 +19,13 @@ def get_github_client() -> GitHubClient:
 async def ingest_repo(client: GitHubClient, repo: str) -> int:
     """Ingest a single repo. Returns count of documents indexed."""
     document_index.clear_repo(repo)
-    docs = await client.fetch_canonical_docs(repo)
+    docs = await client.fetch_repo_docs(repo)
     for doc in docs:
         document_index.add(doc)
     return len(docs)
 
 
-@router.post("/ingest/{repo_name}")
-async def ingest_single(repo_name: str):
-    """Re-ingest a specific repo."""
-    if repo_name not in settings.REPOS:
-        raise HTTPException(status_code=404, detail=f"Unknown repo: {repo_name}")
-
-    client = get_github_client()
-    start = time.time()
-    count = await ingest_repo(client, repo_name)
-    duration = int((time.time() - start) * 1000)
-
-    return {
-        "repo": repo_name,
-        "documents_indexed": count,
-        "duration_ms": duration,
-    }
-
-
+# /ingest/all must be defined BEFORE /ingest/{repo_name} to avoid path parameter capture
 @router.post("/ingest/all")
 async def ingest_all():
     """Re-ingest all configured repos."""
@@ -63,3 +46,21 @@ async def ingest_all():
 
     duration = int((time.time() - start) * 1000)
     return {"repos": results, "total": total, "duration_ms": duration}
+
+
+@router.post("/ingest/{repo_name}")
+async def ingest_single(repo_name: str):
+    """Re-ingest a specific repo."""
+    if repo_name not in settings.REPOS:
+        raise HTTPException(status_code=404, detail=f"Unknown repo: {repo_name}")
+
+    client = get_github_client()
+    start = time.time()
+    count = await ingest_repo(client, repo_name)
+    duration = int((time.time() - start) * 1000)
+
+    return {
+        "repo": repo_name,
+        "documents_indexed": count,
+        "duration_ms": duration,
+    }
