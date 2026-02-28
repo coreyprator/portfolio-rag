@@ -38,7 +38,13 @@
 
 | Commit | Description |
 |--------|-------------|
-| TBD | Phase 1-4: full-repo ingestion, /documents, freshness, prompt lifecycle, v0.2.0 |
+| `6ddb3f9` | Phase 1-4: full-repo ingestion, /documents, freshness, prompt lifecycle, v0.2.0 |
+
+## UAT
+
+- **Handoff ID**: `539D4D9E-D6C6-4C99-BE09-23936E802A8E`
+- **UAT ID**: `6AA11193-3B01-45A8-92D2-11D3A672C3C8`
+- **Handoff URL**: https://metapm.rentyourcio.com/mcp/handoffs/539D4D9E-D6C6-4C99-BE09-23936E802A8E/content
 
 ## Service URL
 
