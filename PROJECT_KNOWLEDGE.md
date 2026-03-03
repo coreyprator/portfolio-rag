@@ -149,6 +149,27 @@ curl https://portfolio-rag-57478301787.us-central1.run.app/health
 ## Known Limitations
 
 - In-memory index: all data lost on container restart. Auto-re-ingests on startup.
-- GitHub API rate limit (5000 req/hr): ingesting 1000+ files can exhaust quota. If startup ingestion fails, use `POST /ingest/all` after rate limit resets.
+- GitHub API rate limit (5000 req/hr): ingesting 1000+ files across 6 repos can exhaust quota. Ingest repos one at a time with pauses between if full re-ingest fails. Future: batch fetches, conditional requests, or git clone. If startup ingestion fails, use `POST /ingest/all` after rate limit resets.
+- GitHub PAT `portfolio-rag-github-token` in Secret Manager has `repo` scope only, not `admin:repo_hook`. Webhooks were created via `gh` CLI OAuth token. If webhooks need recreation, update PAT scope or use `gh api`.
+- Starlette `Mount()` causes 307 redirects from `/path` to `/path/` with HTTP (not HTTPS) scheme behind Cloud Run's TLS termination. For MCP endpoints that need exact path matching, use direct FastAPI routes instead of mounting. Workaround applied in PR-MS2: direct FastAPI `POST /mcp` endpoint instead of `app.mount("/mcp", ...)`.
 - 2 gunicorn workers = 2 separate in-memory stores. Prompt/artifact data may differ between workers.
 - GCP_SA_KEY secret not yet configured on GitHub repo. CI/CD deploys via GitHub Actions not functional. Deploy directly with `gcloud run deploy`.
+
+## MCP Library Dependencies
+
+`mcp>=1.0.0` requires minimum versions:
+- `httpx >= 0.27`
+- `pydantic >= 2.7.2`
+- `pydantic-settings >= 2.5.2`
+
+Strict version pins in requirements.txt will cause build failures. When adding `mcp` to any
+new service, check requirements.txt for conflicts with these minimum versions before building.
+Source: PR-MS2 (2026-03-02) — strict pins caused pip resolution failures during initial build.
+
+## Health Endpoint Enhancement (Backlog)
+
+Current `/health` reports total document count only.
+Recommended: report per-repo doc counts to make silent ingestion failures visible.
+Example: `{"harmonylab": 45, "metapm": 62, "etymython": 0}`
+A repo returning 0 despite being in config signals an ingestion failure.
+Target sprint: PR-MS3.
