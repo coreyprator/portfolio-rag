@@ -1,0 +1,147 @@
+"""Ingestion pipelines for portfolio and etymology collections."""
+
+import logging
+import os
+from datetime import datetime, timezone
+
+from app.core.config import settings
+from app.core.vectorstore import vector_store
+from app.core.chunking import chunk_markdown, chunk_pdf_pages
+from app.services.github import GitHubClient
+
+logger = logging.getLogger(__name__)
+
+# Portfolio source files — specific docs for semantic search
+PORTFOLIO_FILES = [
+    {"repo": "metapm", "path": "PROJECT_KNOWLEDGE.md", "project": "MetaPM"},
+    {"repo": "project-methodology", "path": "PROJECT_KNOWLEDGE.md", "project": "project-methodology"},
+    {"repo": "project-methodology", "path": "templates/CC_Bootstrap_v1.md", "project": "project-methodology"},
+    {"repo": "project-methodology", "path": "docs/CAI_Outbound_CC_Prompt_Standard.md", "project": "project-methodology"},
+    {"repo": "project-methodology", "path": "docs/CAI_Inbound_CC_Handoff_Standard.md", "project": "project-methodology"},
+    {"repo": "ArtForge", "path": "PROJECT_KNOWLEDGE.md", "project": "ArtForge"},
+    {"repo": "harmonylab", "path": "PROJECT_KNOWLEDGE.md", "project": "HarmonyLab"},
+    {"repo": "Super-Flashcards", "path": "PROJECT_KNOWLEDGE.md", "project": "SuperFlashcards"},
+    {"repo": "etymython", "path": "PROJECT_KNOWLEDGE.md", "project": "Etymython"},
+    {"repo": "portfolio-rag", "path": "PROJECT_KNOWLEDGE.md", "project": "PortfolioRAG"},
+]
+
+# Beekes PDF filename (bundled in Docker image)
+BEEKES_PDF = "698401131-Beekes-Etymological-Dictionary-Greek-1.pdf"
+
+
+async def ingest_portfolio() -> dict:
+    """Ingest portfolio markdown files into ChromaDB portfolio collection.
+
+    Fetches specific files from GitHub, chunks by H2/H3 headers,
+    embeds with OpenAI, and upserts into ChromaDB.
+    Returns ingestion stats.
+    """
+    if not settings.OPENAI_API_KEY:
+        return {"error": "OPENAI_API_KEY not set", "chunks": 0}
+
+    # Try with token; if it fails (expired PAT), retry without auth (repos are public)
+    clients = [
+        GitHubClient(token=settings.GITHUB_TOKEN, owner=settings.REPO_OWNER),
+        GitHubClient(token="", owner=settings.REPO_OWNER),
+    ] if settings.GITHUB_TOKEN else [
+        GitHubClient(token="", owner=settings.REPO_OWNER),
+    ]
+
+    # Delete collection for clean re-ingestion
+    vector_store.delete_collection("portfolio")
+
+    ingested_at = datetime.now(timezone.utc).isoformat()
+    all_chunks = []
+    file_stats = []
+    working_client = None
+
+    for file_info in PORTFOLIO_FILES:
+        source_file = f"{file_info['repo']}/{file_info['path']}"
+        content = None
+        for client in ([working_client] if working_client else clients):
+            try:
+                content, _ = await client.fetch_file(file_info["repo"], file_info["path"])
+                working_client = client
+                break
+            except Exception:
+                continue
+        if content is None:
+            err = "All fetch attempts failed (token may be expired)"
+            logger.error(f"Failed to fetch {source_file}: {err}")
+            file_stats.append({"file": source_file, "chunks": 0, "error": err})
+            continue
+        chunks = chunk_markdown(content, source_file, file_info["project"])
+        for chunk in chunks:
+            chunk["metadata"]["ingested_at"] = ingested_at
+        all_chunks.extend(chunks)
+        file_stats.append({"file": source_file, "chunks": len(chunks)})
+        logger.info(f"Chunked {source_file}: {len(chunks)} chunks")
+
+    if not all_chunks:
+        return {"chunks": 0, "files": file_stats}
+
+    # Generate unique IDs — append index to handle duplicate section headers
+    ids = [f"{c['metadata']['source_file']}::{c['metadata']['section']}::{i}" for i, c in enumerate(all_chunks)]
+    documents = [c["text"] for c in all_chunks]
+    metadatas = [c["metadata"] for c in all_chunks]
+
+    vector_store.upsert("portfolio", ids, documents, metadatas)
+    logger.info(f"Portfolio ingestion complete: {len(all_chunks)} chunks from {len(PORTFOLIO_FILES)} files")
+
+    return {"chunks": len(all_chunks), "files": file_stats}
+
+
+async def ingest_etymology(pdf_path: str = None) -> dict:
+    """Ingest Beekes PDF into ChromaDB etymology collection.
+
+    Extracts text from PDF pages, chunks, embeds, and upserts.
+    """
+    if not settings.OPENAI_API_KEY:
+        return {"error": "OPENAI_API_KEY not set", "chunks": 0}
+
+    if pdf_path is None:
+        # Look for PDF in app directory (Docker image) or repo root
+        candidates = [
+            os.path.join("/app", BEEKES_PDF),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), BEEKES_PDF),
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                pdf_path = p
+                break
+        if pdf_path is None:
+            return {"error": f"Beekes PDF not found. Searched: {candidates}", "chunks": 0}
+
+    try:
+        from PyPDF2 import PdfReader
+    except ImportError:
+        return {"error": "PyPDF2 not installed", "chunks": 0}
+
+    logger.info(f"Reading PDF: {pdf_path}")
+    reader = PdfReader(pdf_path)
+    pages = []
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        pages.append(text)
+
+    logger.info(f"Extracted {len(pages)} pages from PDF")
+
+    chunks = chunk_pdf_pages(pages, BEEKES_PDF)
+    if not chunks:
+        return {"chunks": 0, "pages": len(pages), "error": "No viable chunks extracted"}
+
+    # Delete collection for clean re-ingestion
+    vector_store.delete_collection("etymology")
+
+    ingested_at = datetime.now(timezone.utc).isoformat()
+    for chunk in chunks:
+        chunk["metadata"]["ingested_at"] = ingested_at
+
+    ids = [f"beekes::p{c['metadata']['page_number']}::{i}" for i, c in enumerate(chunks)]
+    documents = [c["text"] for c in chunks]
+    metadatas = [c["metadata"] for c in chunks]
+
+    vector_store.upsert("etymology", ids, documents, metadatas)
+
+    logger.info(f"Etymology ingestion complete: {len(chunks)} chunks from {len(pages)} pages")
+    return {"chunks": len(chunks), "pages": len(pages)}

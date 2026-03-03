@@ -17,22 +17,27 @@ router = APIRouter(tags=["MCP"])
 TOOL_SCHEMA = {
     "name": "query_portfolio",
     "description": (
-        "Query the portfolio knowledge base. "
-        "Returns relevant context from PROJECT_KNOWLEDGE.md files, "
-        "Bootstrap standards, session closeouts, and methodology docs "
-        "across all portfolio projects."
+        "Search the portfolio knowledge base. "
+        "Returns ranked chunks with source attribution from "
+        "PROJECT_KNOWLEDGE.md files, Bootstrap standards, methodology docs, "
+        "and etymology references across all portfolio projects."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Natural language question or keyword search",
+                "description": "Natural language search query",
             },
-            "n_results": {
+            "collection": {
+                "type": "string",
+                "description": "Collection to search: 'portfolio', 'etymology', or omit for all",
+                "enum": ["portfolio", "etymology"],
+            },
+            "max_results": {
                 "type": "integer",
                 "default": 5,
-                "description": "Number of results to return (default 5, max 20)",
+                "description": "Maximum chunks to return (default 5, max 20)",
             },
         },
         "required": ["query"],
@@ -50,10 +55,11 @@ def _check_auth(x_api_key: str | None, authorization: str | None) -> JSONRespons
     # Path 1: x-api-key header (original)
     if x_api_key and x_api_key == settings.RAG_API_KEY:
         return None
-    # Path 2: Authorization: Bearer <token>
+    # Path 2: Authorization: Bearer <key-or-token>
     if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]
-        if verify_token(token) is not None:
+        bearer_value = authorization[7:]
+        # Accept raw API key or signed OAuth token
+        if bearer_value == settings.RAG_API_KEY or verify_token(bearer_value) is not None:
             return None
     # Neither path succeeded
     return JSONResponse(

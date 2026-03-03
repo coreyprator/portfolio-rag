@@ -1,4 +1,4 @@
-"""Portfolio RAG - Document Retrieval Service for CC Sessions"""
+"""Portfolio RAG - Semantic Document Retrieval Service for CC Sessions"""
 
 import contextlib
 import logging
@@ -11,22 +11,24 @@ from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
 from app.core.index import document_index
+from app.core.vectorstore import vector_store
 from app.api import query, ingest, webhook, prompts, artifacts
 from app.api import mcp_endpoint, oauth
 from app.services.github import GitHubClient
+from app.services.ingestion import ingest_portfolio
 
 logger = logging.getLogger(__name__)
 
 
 async def _startup_ingest():
-    """Ingest all repos on startup."""
+    """Ingest all repos on startup (legacy keyword index)."""
     if not settings.GITHUB_TOKEN:
         logger.warning(
             "GITHUB_TOKEN not set. Skipping startup ingestion. "
             "Use POST /ingest/all to trigger manually."
         )
         return
-    logger.info(f"Starting initial ingestion of {len(settings.REPOS)} repos...")
+    logger.info(f"Starting legacy ingestion of {len(settings.REPOS)} repos...")
     client = GitHubClient(token=settings.GITHUB_TOKEN, owner=settings.REPO_OWNER)
     total = 0
     for repo in settings.REPOS:
@@ -39,8 +41,26 @@ async def _startup_ingest():
         except Exception as e:
             logger.warning(f"Failed to ingest {repo} on startup: {e}")
     logger.info(
-        f"Startup ingestion complete: {total} documents from {len(settings.REPOS)} repos"
+        f"Legacy ingestion complete: {total} documents from {len(settings.REPOS)} repos"
     )
+
+
+async def _startup_chromadb():
+    """Initialize ChromaDB and ingest portfolio collection."""
+    logger.info("Initializing ChromaDB vector store...")
+    vector_store.initialize()
+
+    if not settings.OPENAI_API_KEY:
+        logger.warning("OPENAI_API_KEY not set. Skipping ChromaDB ingestion.")
+        return
+
+    logger.info("Starting ChromaDB portfolio ingestion...")
+    try:
+        result = await ingest_portfolio()
+        chunks = result.get("chunks", 0)
+        logger.info(f"ChromaDB portfolio ingestion complete: {chunks} chunks")
+    except Exception as e:
+        logger.error(f"ChromaDB portfolio ingestion failed: {e}")
 
 
 @contextlib.asynccontextmanager
@@ -48,6 +68,7 @@ async def lifespan(app):
     logger.info("=" * 60)
     logger.info(f"Portfolio RAG v{settings.VERSION} STARTING UP")
     logger.info("=" * 60)
+    await _startup_chromadb()
     await _startup_ingest()
     logger.info("Server ready.")
     yield
@@ -55,7 +76,7 @@ async def lifespan(app):
 
 app = FastAPI(
     title="Portfolio RAG",
-    description="Document retrieval service for CC sessions. Indexes all text files from portfolio repos.",
+    description="Semantic document retrieval service for CC sessions. ChromaDB + OpenAI embeddings.",
     version=settings.VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -98,14 +119,14 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.head("/health")
 async def health_check():
     stats = document_index.stats()
+    collections = vector_store.collection_counts()
     return {
         "status": "healthy",
         "version": settings.VERSION,
         "build": settings.BUILD,
-        "documents": stats["document_count"],
+        "collections": collections,
+        "legacy_documents": stats["document_count"],
         "repos_indexed": len(stats["repos_indexed"]),
-        "doc_types": stats["doc_types"],
-        "last_ingest": stats["last_ingest"],
     }
 
 
@@ -124,6 +145,8 @@ async def root():
             "GET /query?q=&repo=",
             "GET /checkpoints",
             "POST /ingest/all",
+            "POST /ingest/portfolio (ChromaDB semantic, auth required)",
+            "POST /ingest/etymology (ChromaDB semantic, auth required)",
             "POST /ingest/{repo}",
             "POST /webhook/github",
             "POST /prompts",
