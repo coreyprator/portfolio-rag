@@ -1,4 +1,4 @@
-"""MCP Streamable HTTP endpoint - JSON-RPC handler with API key auth."""
+"""MCP Streamable HTTP endpoint - JSON-RPC handler with API key + Bearer auth."""
 
 import logging
 
@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.mcp_server import query_portfolio
+from app.api.oauth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +40,26 @@ TOOL_SCHEMA = {
 }
 
 
-def _check_api_key(x_api_key: str | None) -> JSONResponse | None:
-    """Validate API key. Returns error response if invalid, None if OK."""
+def _check_auth(x_api_key: str | None, authorization: str | None) -> JSONResponse | None:
+    """Validate API key or Bearer token. Returns error response if invalid, None if OK."""
     if not settings.RAG_API_KEY:
         return JSONResponse(
             status_code=503,
             content={"error": "MCP endpoint not configured (API key missing)"},
         )
-    if x_api_key != settings.RAG_API_KEY:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Invalid or missing API key"},
-        )
-    return None
+    # Path 1: x-api-key header (original)
+    if x_api_key and x_api_key == settings.RAG_API_KEY:
+        return None
+    # Path 2: Authorization: Bearer <token>
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        if verify_token(token) is not None:
+            return None
+    # Neither path succeeded
+    return JSONResponse(
+        status_code=401,
+        content={"error": "Invalid or missing API key"},
+    )
 
 
 def _jsonrpc_error(request_id, code: int, message: str) -> dict:
@@ -59,9 +67,13 @@ def _jsonrpc_error(request_id, code: int, message: str) -> dict:
 
 
 @router.post("/mcp")
-async def mcp_handler(request: Request, x_api_key: str | None = Header(None)):
+async def mcp_handler(
+    request: Request,
+    x_api_key: str | None = Header(None),
+    authorization: str | None = Header(None),
+):
     """MCP Streamable HTTP endpoint. Handles JSON-RPC 2.0 requests."""
-    auth_error = _check_api_key(x_api_key)
+    auth_error = _check_auth(x_api_key, authorization)
     if auth_error:
         return auth_error
 

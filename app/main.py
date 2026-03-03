@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from app.core.config import settings
 from app.core.index import document_index
 from app.api import query, ingest, webhook, prompts, artifacts
-from app.api import mcp_endpoint
+from app.api import mcp_endpoint, oauth
 from app.services.github import GitHubClient
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,8 @@ async def root():
             "GET /prompts?project=&status=",
             "POST /artifacts/{sprint_id}",
             "GET /artifacts/{sprint_id}",
-            "POST /mcp (MCP Streamable HTTP - requires x-api-key header)",
+            "POST /oauth/token (OAuth 2.0 client_credentials grant)",
+            "POST /mcp (MCP Streamable HTTP - requires x-api-key or Bearer token)",
         ],
     }
 
@@ -144,4 +145,5 @@ app.include_router(ingest.router, tags=["Ingestion"])
 app.include_router(webhook.router, tags=["Webhook"])
 app.include_router(prompts.router, tags=["Prompts"])
 app.include_router(artifacts.router, tags=["Artifacts"])
+app.include_router(oauth.router)
 app.include_router(mcp_endpoint.router)

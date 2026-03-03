@@ -6,12 +6,13 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    VERSION: str = "1.0.0"
+    VERSION: str = "1.1.0"
     BUILD: str = os.getenv("COMMIT_SHA", os.getenv("BUILD_ID", "unknown"))
 
     GITHUB_TOKEN: str = ""
     WEBHOOK_SECRET: str = ""
     RAG_API_KEY: str = ""
+    OAUTH_CLIENT_ID: str = ""
     REPO_OWNER: str = "coreyprator"
     REPOS: List[str] = [
         "project-methodology",
