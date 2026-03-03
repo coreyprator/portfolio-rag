@@ -159,7 +159,7 @@ class DocumentIndex:
     def get(self, repo: str, path: str) -> Optional[DocumentRecord]:
         return self._docs.get(f"{repo}/{path}")
 
-    def search(self, query: str, repo: Optional[str] = None) -> list[dict]:
+    def search(self, query: str, repo: Optional[str] = None, limit: int = 10) -> list[dict]:
         terms = query.lower().split()
         if not terms:
             return []
@@ -185,7 +185,7 @@ class DocumentIndex:
                     "word_count": doc.word_count,
                 })
         results.sort(key=lambda r: r["score"], reverse=True)
-        return results[:10]
+        return results[:limit]
 
     def get_latest(self, doc_type: str, repo: Optional[str] = None) -> Optional[DocumentRecord]:
         candidates = []

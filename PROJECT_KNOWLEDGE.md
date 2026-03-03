@@ -1,26 +1,30 @@
 # Portfolio RAG -- Project Knowledge Document
 <!-- CHECKPOINT: PR-PK-7D4E -->
 Generated: 2026-02-28 by CC Session
-Updated: 2026-02-28 -- Sprint "PR-MS2" (v0.2.0)
+Updated: 2026-03-02T23:37:00Z -- Sprint PR-MS2 MCP Endpoint (v1.0.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-02-28 (PR-MS2 Document Coverage + UAT Fixes, v0.2.0)
+### Latest Session Update -- 2026-03-02 (PR-MS2 MCP Query Endpoint, v1.0.0)
 
-- **Sprint**: Expand from 73 canonical docs to ALL text files across 6 repos
-- **Current Version**: v0.2.0 -- **DEPLOYED** to Cloud Run
+- **Sprint**: Add MCP-compatible query endpoint with API key auth
+- **Current Version**: v1.0.0 -- **DEPLOYED** to Cloud Run
 - **Service URL**: https://portfolio-rag-57478301787.us-central1.run.app
-- **Health**: `{"status":"healthy","version":"0.2.0","documents":1032,"repos_indexed":5}`
-- **Changes from v0.1.0**:
-  - Full-repo ingestion: ALL text files indexed (.md, .py, .html, .js, .json, .yaml, etc.)
-  - 14 doc_type classifications: pk, intent, bootstrap, culture, claude, closeout, changelog, source, config, migration, template, script, sql, docs
-  - `GET /documents` endpoint with 5 filters (repo, doc_type, has_checkpoint, extension, path_contains)
-  - `GET /latest/all` dashboard endpoint with freshness metadata
-  - Freshness metadata on all `/latest/{type}` responses (age_minutes, age_human, is_stale)
-  - Prompt lifecycle tracking: status (draft/sent/in_progress/completed/needs_fixes), PATCH support, handoff/UAT ID tracking
-  - `GET /prompts/active` endpoint for sent/in_progress prompts
-  - Fixed route ordering bug (`/ingest/all` before `/ingest/{repo}`)
-  - Fixed GitHub token whitespace stripping
-  - Fixed doc_type for files with "PROJECT_KNOWLEDGE" in filename (e.g., "Harmony Lab PROJECT_KNOWLEDGE.md")
+- **Health**: `{"status":"healthy","version":"1.0.0","documents":1265,"repos_indexed":6}`
+- **Cloud Run Revision**: portfolio-rag-00016-9ln
+- **Changes from v0.2.0**:
+  - MCP Streamable HTTP endpoint at `POST /mcp` (JSON-RPC 2.0)
+  - `query_portfolio` tool: keyword search across all indexed docs, returns results with `[SOURCE:]` labels
+  - API key authentication via `x-api-key` header. Key stored in Secret Manager as `rag-api-key`
+  - `mcp` Python library added for tool definition (`@mcp.tool()` decorator)
+  - `search()` method accepts `limit` parameter (default 10, MCP tool uses up to 20)
+  - Converted startup from `@app.on_event("startup")` to lifespan pattern
+  - Relaxed dependency version pins for `mcp` compatibility (httpx>=0.27, pydantic>=2.7.2, pydantic-settings>=2.5.2)
+
+### Previous: PR-MS2 Document Coverage + UAT Fixes (v0.2.0)
+
+- Full-repo ingestion: ALL text files indexed (.md, .py, .html, .js, .json, .yaml, etc.)
+- 14 doc_type classifications, freshness metadata, prompt lifecycle tracking
+- Fixed route ordering, GitHub token whitespace, doc_type for PROJECT_KNOWLEDGE files
 
 ### Previous: PR-MS1 Portfolio RAG MVP (v0.1.0)
 
@@ -49,6 +53,7 @@ Purpose: Canonical reference for all AI sessions working on this project.
 | `/prompts/{id}` | PATCH | Update status, handoff_id, uat_id, etc. |
 | `/artifacts/{sprint_id}` | POST | Store closeout artifact |
 | `/artifacts/{sprint_id}` | GET | Get artifacts for sprint |
+| `/mcp` | POST | MCP Streamable HTTP endpoint (JSON-RPC 2.0). Requires `x-api-key` header. Tools: `query_portfolio` |
 
 ## Doc Type Taxonomy
 
@@ -91,7 +96,9 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 | Region | us-central1 |
 | Document Source | GitHub REST API (6 repos) |
 | Index | In-memory Python dict (keyword search) |
-| Auth | GitHub PAT via Secret Manager (portfolio-rag-github-token) |
+| MCP | `mcp` Python library (FastMCP for tool definition, FastAPI for HTTP) |
+| Auth (ingestion) | GitHub PAT via Secret Manager (portfolio-rag-github-token) |
+| Auth (MCP endpoint) | API key via Secret Manager (rag-api-key), passed as `x-api-key` header |
 | CI/CD | GitHub Actions -> gcloud run deploy (needs GCP_SA_KEY secret) |
 
 ## Repos Indexed
@@ -105,6 +112,16 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 | Super-Flashcards | coreyprator | pk, intent, claude, source, config, docs |
 | etymython | coreyprator | pk, intent, claude, source, docs |
 
+## MCP Integration
+
+- **Endpoint**: `POST /mcp`
+- **Protocol**: MCP Streamable HTTP (JSON-RPC 2.0)
+- **Auth**: `x-api-key` header. Key in Secret Manager as `rag-api-key`
+- **Tool**: `query_portfolio(query: str, n_results: int = 5) -> str`
+- **Return format**: `[SOURCE: repo/path]\n<content>` per result, separated by `---`
+- **Phase 2**: PL manually adds MCP server URL + API key to Claude.ai Settings > Integrations
+- **Note**: cc-deploy SA cannot create secrets in Secret Manager. New secrets require cprator account.
+
 ## Future Roadmap
 
 | Sprint | Scope |
@@ -115,8 +132,12 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 ## Deployment
 
 ```bash
-# Direct deploy
+# Direct deploy (preserves existing secret mappings)
 gcloud run deploy portfolio-rag --source . --region us-central1 --allow-unauthenticated --project super-flashcards-475210
+
+# Deploy with all secrets (use when adding new secrets)
+gcloud run deploy portfolio-rag --source . --region us-central1 --allow-unauthenticated --project super-flashcards-475210 \
+  --set-secrets="GITHUB_TOKEN=portfolio-rag-github-token:latest,WEBHOOK_SECRET=portfolio-rag-webhook-secret:latest,RAG_API_KEY=rag-api-key:latest"
 
 # Trigger re-ingestion
 curl -X POST -H "Content-Length: 0" https://portfolio-rag-57478301787.us-central1.run.app/ingest/all
