@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from app.core.index import document_index, compute_freshness
+from app.core.vectorstore import vector_store
 
 router = APIRouter()
 
@@ -22,6 +23,31 @@ async def search_documents(q: str = Query(..., min_length=1), repo: str = None):
     """Keyword search across all indexed documents."""
     results = document_index.search(q, repo=repo)
     return {"results": results, "total": len(results), "query": q}
+
+
+@router.get("/semantic")
+async def semantic_search(
+    q: str = Query(..., min_length=1),
+    collection: Optional[str] = None,
+    n: int = 5,
+):
+    """Semantic (ChromaDB/OpenAI) search. collection: 'portfolio', 'etymology', or omit for all."""
+    if collection and collection not in ("portfolio", "etymology"):
+        raise HTTPException(status_code=400, detail="collection must be 'portfolio' or 'etymology'")
+    n = min(max(n, 1), 20)
+    results = vector_store.query(q, collection=collection, max_results=n)
+    formatted = []
+    for r in results:
+        meta = r.get("metadata", {})
+        formatted.append({
+            "score": r.get("score"),
+            "snippet": r.get("text", "")[:500],
+            "source": meta.get("source_file") or meta.get("path", ""),
+            "page": meta.get("page_number"),
+            "section": meta.get("section") or meta.get("entry_headword", ""),
+            "collection": r.get("collection"),
+        })
+    return {"query": q, "collection": collection or "all", "total": len(formatted), "results": formatted}
 
 
 @router.get("/latest/all")

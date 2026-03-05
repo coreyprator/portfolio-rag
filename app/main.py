@@ -62,6 +62,9 @@ async def _startup_chromadb():
     except Exception as e:
         logger.error(f"ChromaDB portfolio ingestion failed: {e}")
 
+    # Note: etymology ingest (Beekes PDF) is NOT run on startup — it's triggered manually
+    # via POST /ingest/etymology to avoid blocking the event loop during startup.
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
