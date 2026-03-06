@@ -1,27 +1,31 @@
 # Portfolio RAG -- Project Knowledge Document
-<!-- CHECKPOINT: PR-PK-9A3F -->
+<!-- CHECKPOINT: PR-PK-B2E8 -->
 Generated: 2026-02-28 by CC Session
-Updated: 2026-03-04T00:00:00Z -- Sprint PR-MS3 ChromaDB Semantic RAG (v2.0.0)
+Updated: 2026-03-06T13:30:00Z -- Sprint PR-OPS-001 GCS Persistence (v2.1.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-03 (PR-MS3 ChromaDB Semantic RAG, v2.0.0)
+### Latest Session Update -- 2026-03-06 (PR-OPS-001 GCS Persistence, v2.1.0)
 
-- **Sprint**: Ground-up rewrite to ChromaDB + OpenAI embeddings semantic RAG engine
-- **Current Version**: v2.0.0 -- **DEPLOYED** to Cloud Run
+- **Sprint**: GCS backup/restore for ChromaDB — eliminates manual re-ingestion after deploys
+- **Current Version**: v2.1.0 -- **DEPLOYED** to Cloud Run
 - **Service URL**: https://portfolio-rag-57478301787.us-central1.run.app
-- **Health**: `{"status":"healthy","version":"2.0.0","collections":{"portfolio":527,"etymology":1835}}`
-- **Cloud Run Revision**: portfolio-rag-00026-j25
-- **EtymoRAG Lab scope absorbed**: etymology collection now lives in this service
-- **Changes from v1.1.0**:
-  - ChromaDB vector store with OpenAI `text-embedding-3-small` embeddings
-  - `portfolio` collection: 527 chunks from 10 markdown files (PK.md + governance docs)
-  - `etymology` collection: 1835 chunks from Beekes Etymological Dictionary PDF (1853 pages)
-  - MCP `query_portfolio` tool: semantic search with collection routing + relevance scores
-  - `POST /ingest/portfolio` and `POST /ingest/etymology` endpoints (auth required)
-  - Cloud Scheduler daily re-ingestion at 8:00 UTC (2:00 AM CST)
-  - Cloud Run: min-instances=1, 2Gi memory, 1 gunicorn worker
-  - Storage: Option B (ephemeral + re-ingest on cold start)
-  - Health endpoint: per-collection document counts
+- **Health**: `{"status":"healthy","version":"2.1.0","collections":{"portfolio":545,"etymology":1835}}`
+- **Cloud Run Revision**: portfolio-rag-00037-ntn
+- **Changes from v2.0.0**:
+  - `chromadb.Client()` → `chromadb.PersistentClient(path="/app/chroma_data")`
+  - GCS backup after every ingestion: `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz`
+  - GCS restore on startup: both collections available immediately after deploy
+  - If backup exists, skip portfolio re-ingestion (faster startup)
+  - Added `google-cloud-storage>=2.0.0` dependency
+
+### Previous: PR-MS3 ChromaDB Semantic RAG (v2.0.0)
+
+- Ground-up rewrite to ChromaDB + OpenAI embeddings semantic RAG engine
+- EtymoRAG Lab scope absorbed: etymology collection now lives in this service
+- `portfolio` collection: 545 chunks from 10 markdown files
+- `etymology` collection: 1835 chunks from Beekes PDF (1853 pages)
+- MCP `query_portfolio` tool with collection routing + relevance scores
+- Cloud Scheduler daily re-ingestion at 8:00 UTC
 
 ### Previous: PR-MS2-FIX OAuth 2.0 (v1.1.0)
 
@@ -109,7 +113,8 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 | Deployment | Google Cloud Run (service: portfolio-rag, min-instances: 1, 2Gi) |
 | GCP Project | super-flashcards-475210 |
 | Region | us-central1 |
-| Vector Store | ChromaDB (in-memory, ephemeral + re-ingest on cold start) |
+| Vector Store | ChromaDB PersistentClient (`/app/chroma_data`), GCS backup/restore on deploy |
+| GCS Backup | `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz` (~39 MiB) |
 | Embeddings | OpenAI `text-embedding-3-small` via direct `openai.OpenAI()` client |
 | Collections | `portfolio` (527 chunks, 10 markdown files), `etymology` (1835 chunks, Beekes PDF) |
 | Document Source | GitHub REST API (public repos, unauthenticated fallback if PAT expired) |
@@ -196,7 +201,7 @@ curl https://portfolio-rag-57478301787.us-central1.run.app/health
 
 ## Known Limitations
 
-- **ChromaDB ephemeral**: All vector data lost on container restart. Portfolio auto-re-ingests on cold start (~30s). Etymology requires manual `POST /ingest/etymology` (~165s). Min-instances=1 mitigates.
+- **ChromaDB GCS persistence**: Data backed up to GCS after ingestion, restored on startup. Both collections available immediately after deploy. Manual re-ingest only needed when source content changes.
 - **OpenAI API key whitespace**: The `openai-api-key` secret in Secret Manager has trailing `\r\n`. Code applies `.strip()`. If replacing the secret, ensure no trailing whitespace.
 - **GitHub PAT expired**: `portfolio-rag-github-token` PAT may be expired/revoked. Ingestion falls back to unauthenticated GitHub API (60 req/hr, sufficient for 10 files). Replace PAT if rate limit becomes an issue.
 - **1 gunicorn worker**: Required to avoid ChromaDB data duplication. Prompt/artifact data is single-instance only.

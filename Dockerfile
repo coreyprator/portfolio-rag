@@ -12,7 +12,7 @@ COPY . .
 RUN find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
 RUN find . -type f -name '*.pyc' -delete 2>/dev/null || true
 
-RUN useradd -m appuser && chown -R appuser:appuser /app
+RUN mkdir -p /app/chroma_data && useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8080

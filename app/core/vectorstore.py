@@ -1,6 +1,9 @@
-"""ChromaDB vector store with explicit OpenAI embedding generation."""
+"""ChromaDB vector store with explicit OpenAI embedding generation and GCS backup/restore."""
 
 import logging
+import os
+import tarfile
+import tempfile
 
 import chromadb
 import openai
@@ -11,6 +14,65 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBED_BATCH_SIZE = 100
+PERSIST_DIR = "/app/chroma_data"
+BACKUP_BUCKET = "portfolio-rag-backups-57478301787"
+BACKUP_BLOB = "chromadb-backup/chroma_persist.tar.gz"
+
+
+def _gcs_client():
+    """Lazy import and create GCS client."""
+    from google.cloud import storage
+    return storage.Client()
+
+
+def backup_to_gcs():
+    """Tar the ChromaDB persist directory and upload to GCS."""
+    if not os.path.isdir(PERSIST_DIR):
+        logger.warning(f"Persist dir {PERSIST_DIR} not found, skipping backup")
+        return False
+    try:
+        client = _gcs_client()
+        bucket = client.bucket(BACKUP_BUCKET)
+        blob = bucket.blob(BACKUP_BLOB)
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            with tarfile.open(tmp_path, "w:gz") as tar:
+                tar.add(PERSIST_DIR, arcname=os.path.basename(PERSIST_DIR))
+            blob.upload_from_filename(tmp_path)
+            logger.info(f"ChromaDB backed up to gs://{BACKUP_BUCKET}/{BACKUP_BLOB}")
+            return True
+        finally:
+            os.unlink(tmp_path)
+    except Exception as e:
+        logger.error(f"GCS backup failed: {e}")
+        return False
+
+
+def restore_from_gcs() -> bool:
+    """Download and restore ChromaDB backup from GCS. Returns True if restored."""
+    try:
+        client = _gcs_client()
+        bucket = client.bucket(BACKUP_BUCKET)
+        blob = bucket.blob(BACKUP_BLOB)
+        if not blob.exists():
+            logger.info("No GCS backup found — starting fresh")
+            return False
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            blob.download_to_filename(tmp_path)
+            parent = os.path.dirname(PERSIST_DIR)
+            os.makedirs(parent, exist_ok=True)
+            with tarfile.open(tmp_path, "r:gz") as tar:
+                tar.extractall(path=parent)
+            logger.info(f"ChromaDB restored from GCS backup to {PERSIST_DIR}")
+            return True
+        finally:
+            os.unlink(tmp_path)
+    except Exception as e:
+        logger.error(f"GCS restore failed: {e}")
+        return False
 
 
 class VectorStore:
@@ -18,12 +80,13 @@ class VectorStore:
         self._client = None
         self._openai = None
 
-    def initialize(self):
-        """Initialize ChromaDB client and OpenAI client."""
-        self._client = chromadb.Client()
+    def initialize(self, restored_from_gcs: bool = False):
+        """Initialize ChromaDB persistent client and OpenAI client."""
+        os.makedirs(PERSIST_DIR, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=PERSIST_DIR)
         if settings.OPENAI_API_KEY:
             self._openai = openai.OpenAI(api_key=settings.OPENAI_API_KEY.strip())
-            logger.info(f"ChromaDB initialized. OpenAI embeddings: {EMBEDDING_MODEL}")
+            logger.info(f"ChromaDB initialized (persist={PERSIST_DIR}). OpenAI embeddings: {EMBEDDING_MODEL}")
         else:
             logger.warning("OPENAI_API_KEY not set. Embedding generation disabled.")
 

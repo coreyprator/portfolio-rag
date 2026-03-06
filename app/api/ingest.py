@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Header
 
 from app.core.config import settings
 from app.core.index import document_index
+from app.core.vectorstore import backup_to_gcs
 from app.services.github import GitHubClient
 from app.services.ingestion import ingest_portfolio, ingest_etymology
 
@@ -73,6 +74,7 @@ async def ingest_portfolio_endpoint(
     result = await ingest_portfolio()
     duration = int((time.time() - start) * 1000)
     result["duration_ms"] = duration
+    backup_to_gcs()
     return result
 
 
@@ -87,6 +89,7 @@ async def ingest_etymology_endpoint(
     result = await ingest_etymology()
     duration = int((time.time() - start) * 1000)
     result["duration_ms"] = duration
+    backup_to_gcs()
     return result
 
 

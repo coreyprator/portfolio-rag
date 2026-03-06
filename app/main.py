@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
 from app.core.index import document_index
-from app.core.vectorstore import vector_store
+from app.core.vectorstore import vector_store, restore_from_gcs
 from app.api import query, ingest, webhook, prompts, artifacts
 from app.api import mcp_endpoint, oauth
 from app.services.github import GitHubClient
@@ -46,24 +46,32 @@ async def _startup_ingest():
 
 
 async def _startup_chromadb():
-    """Initialize ChromaDB and ingest portfolio collection."""
+    """Initialize ChromaDB: restore from GCS if available, else ingest portfolio."""
+    logger.info("Attempting ChromaDB restore from GCS...")
+    restored = restore_from_gcs()
+
     logger.info("Initializing ChromaDB vector store...")
-    vector_store.initialize()
+    vector_store.initialize(restored_from_gcs=restored)
+
+    counts = vector_store.collection_counts()
+    logger.info(f"ChromaDB post-init counts: {counts}")
+
+    if counts.get("portfolio", 0) > 0 and counts.get("etymology", 0) > 0:
+        logger.info("Both collections populated from GCS backup — skipping ingestion")
+        return
 
     if not settings.OPENAI_API_KEY:
         logger.warning("OPENAI_API_KEY not set. Skipping ChromaDB ingestion.")
         return
 
-    logger.info("Starting ChromaDB portfolio ingestion...")
-    try:
-        result = await ingest_portfolio()
-        chunks = result.get("chunks", 0)
-        logger.info(f"ChromaDB portfolio ingestion complete: {chunks} chunks")
-    except Exception as e:
-        logger.error(f"ChromaDB portfolio ingestion failed: {e}")
-
-    # Note: etymology ingest (Beekes PDF) is NOT run on startup — it's triggered manually
-    # via POST /ingest/etymology to avoid blocking the event loop during startup.
+    if counts.get("portfolio", 0) == 0:
+        logger.info("Portfolio collection empty — ingesting from GitHub...")
+        try:
+            result = await ingest_portfolio()
+            chunks = result.get("chunks", 0)
+            logger.info(f"ChromaDB portfolio ingestion complete: {chunks} chunks")
+        except Exception as e:
+            logger.error(f"ChromaDB portfolio ingestion failed: {e}")
 
 
 @contextlib.asynccontextmanager
