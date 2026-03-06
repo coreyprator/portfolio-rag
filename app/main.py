@@ -4,7 +4,7 @@ import contextlib
 import logging
 import traceback
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -18,6 +18,8 @@ from app.services.github import GitHubClient
 from app.services.ingestion import ingest_portfolio
 
 logger = logging.getLogger(__name__)
+
+_ready = False  # Set True after startup completes; gates /health for Cloud Run probe
 
 
 async def _startup_ingest():
@@ -76,12 +78,14 @@ async def _startup_chromadb():
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
+    global _ready
     logger.info("=" * 60)
     logger.info(f"Portfolio RAG v{settings.VERSION} STARTING UP")
     logger.info("=" * 60)
     await _startup_chromadb()
     await _startup_ingest()
-    logger.info("Server ready.")
+    _ready = True
+    logger.info("Server ready — health gate OPEN.")
     yield
 
 
@@ -125,10 +129,12 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Health check
+# Health check — returns 503 until startup completes (gates Cloud Run HTTP probe)
 @app.get("/health")
 @app.head("/health")
 async def health_check():
+    if not _ready:
+        raise HTTPException(status_code=503, detail="Starting up — GCS restore in progress")
     stats = document_index.stats()
     collections = vector_store.collection_counts()
     return {

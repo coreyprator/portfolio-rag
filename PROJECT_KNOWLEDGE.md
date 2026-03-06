@@ -1,22 +1,31 @@
 # Portfolio RAG -- Project Knowledge Document
-<!-- CHECKPOINT: PR-PK-B2E8 -->
+<!-- CHECKPOINT: PR-PK-C3F9 -->
 Generated: 2026-02-28 by CC Session
-Updated: 2026-03-06T13:30:00Z -- Sprint PR-OPS-001 GCS Persistence (v2.1.0)
+Updated: 2026-03-06 -- Sprint PR-OPS-002 Fix GCS Restore (v2.1.1)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-06 (PR-OPS-001 GCS Persistence, v2.1.0)
+### Latest Session Update -- 2026-03-06 (PR-OPS-002 Fix GCS Restore, v2.1.1)
 
-- **Sprint**: GCS backup/restore for ChromaDB — eliminates manual re-ingestion after deploys
-- **Current Version**: v2.1.0 -- **DEPLOYED** to Cloud Run
+- **Sprint**: Fix GCS restore race condition on startup
+- **Current Version**: v2.1.1 -- **DEPLOYED** to Cloud Run
 - **Service URL**: https://portfolio-rag-57478301787.us-central1.run.app
-- **Health**: `{"status":"healthy","version":"2.1.0","collections":{"portfolio":545,"etymology":1835}}`
-- **Cloud Run Revision**: portfolio-rag-00037-ntn
-- **Changes from v2.0.0**:
-  - `chromadb.Client()` → `chromadb.PersistentClient(path="/app/chroma_data")`
-  - GCS backup after every ingestion: `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz`
-  - GCS restore on startup: both collections available immediately after deploy
-  - If backup exists, skip portfolio re-ingestion (faster startup)
-  - Added `google-cloud-storage>=2.0.0` dependency
+- **Health**: `{"status":"healthy","version":"2.1.1","collections":{"portfolio":545,"etymology":1835}}`
+- **Cloud Run Revision**: portfolio-rag-00041-4c4
+- **Root cause**: TCP startup probe passed when gunicorn master bound to port 8080, before ASGI lifespan (GCS restore) completed. Cloud Run routed traffic to uninitialized worker.
+- **Fix**:
+  - Added `_ready` flag in main.py — `/health` returns 503 until lifespan startup completes
+  - Switched Cloud Run startup probe from TCP to HTTP on `/health`
+  - Cloud Run now waits for `/health` to return 200 before routing traffic
+  - Added `exc_info=True` to GCS restore error logging
+- **Startup probe config**: `httpGet.path=/health, httpGet.port=8080, period=10s, timeout=5s, failureThreshold=24`
+
+### Previous: PR-OPS-001 GCS Persistence (v2.1.0)
+
+- GCS backup/restore for ChromaDB — eliminates manual re-ingestion after deploys
+- `chromadb.Client()` → `chromadb.PersistentClient(path="/app/chroma_data")`
+- GCS backup after every ingestion: `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz`
+- GCS restore on startup: both collections available immediately after deploy
+- Added `google-cloud-storage>=2.0.0` dependency
 
 ### Previous: PR-MS3 ChromaDB Semantic RAG (v2.0.0)
 
@@ -55,7 +64,7 @@ Purpose: Canonical reference for all AI sessions working on this project.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Version, per-collection counts, legacy doc count. No auth required. |
+| `/health` | GET | Version, per-collection counts, legacy doc count. Returns 503 during startup (gates Cloud Run HTTP probe). No auth required. |
 | `/mcp` | POST | MCP Streamable HTTP (JSON-RPC 2.0). Auth: `x-api-key` or `Authorization: Bearer`. Tool: `query_portfolio(query, collection?, max_results?)` |
 | `/ingest/portfolio` | POST | ChromaDB portfolio ingestion from GitHub. Auth required. |
 | `/ingest/etymology` | POST | ChromaDB etymology ingestion from Beekes PDF. Auth required. |
@@ -201,7 +210,7 @@ curl https://portfolio-rag-57478301787.us-central1.run.app/health
 
 ## Known Limitations
 
-- **ChromaDB GCS persistence**: Data backed up to GCS after ingestion, restored on startup. Both collections available immediately after deploy. Manual re-ingest only needed when source content changes.
+- **ChromaDB GCS persistence**: Data backed up to GCS after ingestion, restored on startup. Health returns 503 until restore completes (HTTP startup probe). Both collections available immediately after deploy. Manual re-ingest only needed when source content changes.
 - **OpenAI API key whitespace**: The `openai-api-key` secret in Secret Manager has trailing `\r\n`. Code applies `.strip()`. If replacing the secret, ensure no trailing whitespace.
 - **GitHub PAT expired**: `portfolio-rag-github-token` PAT may be expired/revoked. Ingestion falls back to unauthenticated GitHub API (60 req/hr, sufficient for 10 files). Replace PAT if rate limit becomes an issue.
 - **1 gunicorn worker**: Required to avoid ChromaDB data duplication. Prompt/artifact data is single-instance only.

@@ -71,7 +71,7 @@ def restore_from_gcs() -> bool:
         finally:
             os.unlink(tmp_path)
     except Exception as e:
-        logger.error(f"GCS restore failed: {e}")
+        logger.error(f"GCS restore FAILED: {e}", exc_info=True)
         return False
 
 
