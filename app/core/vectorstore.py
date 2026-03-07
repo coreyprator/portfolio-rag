@@ -132,10 +132,11 @@ class VectorStore:
             )
         return len(ids)
 
-    def query(self, query_text: str, collection: str = None, max_results: int = 5) -> list[dict]:
+    def query(self, query_text: str, collection: str = None, max_results: int = 5,
+              where: dict = None) -> list[dict]:
         """Query one or all collections using semantic search."""
         if collection:
-            return self._query_collection(query_text, collection, max_results)
+            return self._query_collection(query_text, collection, max_results, where=where)
 
         all_results = []
         for coll_name in ["portfolio", "etymology"]:
@@ -143,7 +144,8 @@ class VectorStore:
         all_results.sort(key=lambda x: x["distance"])
         return all_results[:max_results]
 
-    def _query_collection(self, query_text: str, coll_name: str, max_results: int) -> list[dict]:
+    def _query_collection(self, query_text: str, coll_name: str, max_results: int,
+                          where: dict = None) -> list[dict]:
         try:
             coll = self.get_or_create_collection(coll_name)
             count = coll.count()
@@ -151,7 +153,10 @@ class VectorStore:
                 return []
             query_embedding = self.embed_texts([query_text])[0]
             n = min(max_results, count)
-            results = coll.query(query_embeddings=[query_embedding], n_results=n)
+            kwargs = {"query_embeddings": [query_embedding], "n_results": n}
+            if where:
+                kwargs["where"] = where
+            results = coll.query(**kwargs)
         except Exception as e:
             logger.error(f"Query error on collection {coll_name}: {e}")
             return []
@@ -172,7 +177,7 @@ class VectorStore:
 
     def collection_counts(self) -> dict:
         counts = {}
-        for name in ["portfolio", "etymology"]:
+        for name in ["portfolio", "etymology", "code"]:
             try:
                 coll = self.get_or_create_collection(name)
                 counts[name] = coll.count()

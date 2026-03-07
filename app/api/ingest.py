@@ -1,5 +1,8 @@
 """Ingestion endpoints: trigger re-indexing of repos and collections."""
 
+import os
+import subprocess
+import tempfile
 import time
 import logging
 
@@ -7,9 +10,55 @@ from fastapi import APIRouter, HTTPException, Header
 
 from app.core.config import settings
 from app.core.index import document_index
-from app.core.vectorstore import backup_to_gcs
+from app.core.vectorstore import backup_to_gcs, vector_store
 from app.services.github import GitHubClient
 from app.services.ingestion import ingest_portfolio, ingest_etymology
+
+# Repos to clone for code collection (repo key → GitHub path)
+CODE_REPOS = [
+    {"name": "metapm",           "repo": "coreyprator/metapm"},
+    {"name": "super-flashcards", "repo": "coreyprator/Super-Flashcards"},
+    {"name": "artforge",         "repo": "coreyprator/ArtForge"},
+    {"name": "harmonylab",       "repo": "coreyprator/HarmonyLab"},
+    {"name": "etymython",        "repo": "coreyprator/etymython"},
+    {"name": "portfolio-rag",    "repo": "coreyprator/portfolio-rag"},
+    # pie-network-graph not on GitHub — skipped
+]
+
+CODE_EXTENSIONS = {".py", ".sql", ".js"}
+
+CODE_EXCLUDE = [
+    "__pycache__", ".pyc", "node_modules", "venv", ".venv",
+    "static/vendor", "static/libs", "dist/", ".git/",
+]
+
+# Max chars per file to embed (OpenAI 8191-token limit; ~4 chars/token)
+MAX_FILE_CHARS = 24000
+
+
+def _classify_filetype(filepath: str, content: str) -> str:
+    p = filepath.lower().replace("\\", "/")
+    if "/routes/" in p or "/routers/" in p or "@app.get" in content or "@app.post" in content or "@router." in content:
+        return "route"
+    if "/models/" in p or "class.*Base" in content or "SQLModel" in content:
+        return "model"
+    if "/migrations/" in p or p.endswith(".sql"):
+        return "schema"
+    if "/tests/" in p or "/test_" in p or p.startswith("test_"):
+        return "test"
+    if ("/static/" in p or "/templates/" in p) and p.endswith(".js"):
+        return "frontend"
+    if "/services/" in p:
+        return "service"
+    return "util"
+
+
+def _get_commit_date(clone_dir: str, filepath: str) -> str:
+    r = subprocess.run(
+        ["git", "-C", clone_dir, "log", "-1", "--format=%ai", "--", filepath],
+        capture_output=True, text=True, timeout=10
+    )
+    return r.stdout.strip()[:10] or "unknown"
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -91,6 +140,102 @@ async def ingest_etymology_endpoint(
     result["duration_ms"] = duration
     backup_to_gcs()
     return result
+
+
+@router.post("/ingest/code")
+async def ingest_code(
+    x_api_key: str | None = Header(None),
+    authorization: str | None = Header(None),
+):
+    """Clone all configured repos and index source files into the 'code' ChromaDB collection."""
+    _require_auth(x_api_key, authorization)
+    start = time.time()
+
+    docs, metadatas, ids = [], [], []
+    repo_stats = []
+    skipped_repos = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for repo_cfg in CODE_REPOS:
+            repo_name = repo_cfg["name"]
+            repo_url = f"https://github.com/{repo_cfg['repo']}.git"
+            clone_dir = os.path.join(tmpdir, repo_name)
+
+            result = subprocess.run(
+                ["git", "clone", "--depth=1", repo_url, clone_dir],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode != 0:
+                logger.warning(f"Failed to clone {repo_url}: {result.stderr[:200]}")
+                skipped_repos.append(repo_name)
+                continue
+
+            file_count = 0
+            for root, dirs, files in os.walk(clone_dir):
+                rel_root = os.path.relpath(root, clone_dir).replace("\\", "/")
+                # Prune excluded dirs
+                dirs[:] = [d for d in dirs if not any(ex in os.path.join(rel_root, d) for ex in CODE_EXCLUDE)]
+
+                for fname in files:
+                    ext = os.path.splitext(fname)[1]
+                    if ext not in CODE_EXTENSIONS:
+                        continue
+
+                    abs_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(abs_path, clone_dir).replace("\\", "/")
+
+                    if any(ex in rel_path for ex in CODE_EXCLUDE):
+                        continue
+
+                    try:
+                        with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                    except Exception:
+                        continue
+
+                    if not content.strip() or len(content) < 50:
+                        continue
+
+                    # Truncate large files to stay within embedding limits
+                    if len(content) > MAX_FILE_CHARS:
+                        content = content[:MAX_FILE_CHARS] + "\n# [truncated]"
+
+                    filetype = _classify_filetype(rel_path, content)
+                    commit_date = _get_commit_date(clone_dir, rel_path)
+
+                    # Metadata header prepended for richer embedding context
+                    doc = f"# repo:{repo_name} file:{rel_path} type:{filetype}\n\n{content}"
+
+                    doc_id = f"{repo_name}::{rel_path}"
+                    docs.append(doc)
+                    metadatas.append({
+                        "repo":        repo_name,
+                        "filepath":    rel_path,
+                        "filetype":    filetype,
+                        "last_commit": commit_date,
+                        "ext":         ext,
+                    })
+                    ids.append(doc_id)
+                    file_count += 1
+
+            repo_stats.append({"repo": repo_name, "files": file_count})
+            logger.info(f"Code ingest: {repo_name} — {file_count} files")
+
+    if not docs:
+        raise HTTPException(status_code=500, detail="No files indexed — all repos failed or empty")
+
+    # Upsert into "code" collection (replaces by id so this is idempotent)
+    total = vector_store.upsert("code", ids=ids, documents=docs, metadatas=metadatas)
+    backup_to_gcs()
+
+    duration = int((time.time() - start) * 1000)
+    return {
+        "status": "ok",
+        "total_files": total,
+        "repos": repo_stats,
+        "skipped_repos": skipped_repos,
+        "duration_ms": duration,
+    }
 
 
 @router.post("/ingest/{repo_name}")

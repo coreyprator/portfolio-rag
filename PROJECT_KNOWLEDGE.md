@@ -1,10 +1,22 @@
 # Portfolio RAG -- Project Knowledge Document
-<!-- CHECKPOINT: PR-PK-C3F9 -->
+<!-- CHECKPOINT: PR-PK-F7A2 -->
 Generated: 2026-02-28 by CC Session
-Updated: 2026-03-06 -- Sprint PR-OPS-002 Fix GCS Restore (v2.1.1)
+Updated: 2026-03-07 -- Sprint PR-011 Code Collection (v2.2.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-06 (PR-OPS-002 Fix GCS Restore, v2.1.1)
+### Latest Session Update -- 2026-03-07 (PR-011 Code Collection, v2.2.0)
+
+- **Sprint**: Code collection — source code semantic search across 6 repos
+- **Current Version**: v2.2.0 -- **DEPLOYED** to Cloud Run
+- **Health**: `{"status":"healthy","version":"2.2.0","collections":{"portfolio":552,"etymology":1835,"code":521}}`
+- **Cloud Run Revision**: portfolio-rag-00044-7cn
+- **New collection**: `code` — 521 files from 6 repos (.py/.sql/.js), with repo/filepath/filetype/last_commit metadata
+- **New endpoint**: `POST /ingest/code` — clones repos, classifies files, embeds, upserts, backs up to GCS
+- **Extended**: `/semantic` accepts `repo` and `filetype` filter params for code collection
+- **Repos**: metapm(80), super-flashcards(141), artforge(70), harmonylab(35), etymython(178), portfolio-rag(17)
+- **Dockerfile**: Added `git` to apt-get install
+
+### Previous: PR-OPS-002 Fix GCS Restore (v2.1.1)
 
 - **Sprint**: Fix GCS restore race condition on startup
 - **Current Version**: v2.1.1 -- **DEPLOYED** to Cloud Run
@@ -68,6 +80,7 @@ Purpose: Canonical reference for all AI sessions working on this project.
 | `/mcp` | POST | MCP Streamable HTTP (JSON-RPC 2.0). Auth: `x-api-key` or `Authorization: Bearer`. Tool: `query_portfolio(query, collection?, max_results?)` |
 | `/ingest/portfolio` | POST | ChromaDB portfolio ingestion from GitHub. Auth required. |
 | `/ingest/etymology` | POST | ChromaDB etymology ingestion from Beekes PDF. Auth required. |
+| `/ingest/code` | POST | ChromaDB code ingestion — clones 6 repos, indexes .py/.sql/.js. Auth required. |
 | `/ingest/all` | POST | Legacy: re-ingest all repos (keyword index) |
 | `/ingest/{repo}` | POST | Legacy: re-ingest specific repo |
 | `/documents` | GET | Legacy: browse indexed docs with filters |
@@ -123,9 +136,9 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 | GCP Project | super-flashcards-475210 |
 | Region | us-central1 |
 | Vector Store | ChromaDB PersistentClient (`/app/chroma_data`), GCS backup/restore on deploy |
-| GCS Backup | `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz` (~39 MiB) |
+| GCS Backup | `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz` |
 | Embeddings | OpenAI `text-embedding-3-small` via direct `openai.OpenAI()` client |
-| Collections | `portfolio` (527 chunks, 10 markdown files), `etymology` (1835 chunks, Beekes PDF) |
+| Collections | `portfolio` (552 chunks), `etymology` (1835 chunks, Beekes PDF), `code` (521 files from 6 repos) |
 | Document Source | GitHub REST API (public repos, unauthenticated fallback if PAT expired) |
 | Legacy Index | In-memory Python dict (keyword search, kept for backward compatibility) |
 | MCP | Custom JSON-RPC 2.0 handler (no mcp library, direct FastAPI route) |
@@ -159,7 +172,7 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 
 ## Collections
 
-### Portfolio Collection (527 chunks)
+### Portfolio Collection (552 chunks)
 - 10 markdown files from 6 repos, chunked by H2/H3 headers
 - Sources: PROJECT_KNOWLEDGE.md files + governance docs (Bootstrap, CC Prompt Standard, Handoff Standard)
 - Metadata: source_file, section, project, ingested_at
@@ -170,6 +183,16 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 - Chunked by page, metadata: page_number, entry_headword, source_file, ingested_at
 - Manual trigger only: `POST /ingest/etymology`
 - EtymoRAG Lab scope absorbed into this project
+
+### Code Collection (521 files)
+- Source files from 6 repos: .py, .sql, .js
+- One chunk per file (truncated at 24,000 chars for embedding limits)
+- Metadata: repo, filepath, filetype, last_commit, ext
+- Filetype classification: route, model, schema, test, frontend, service, util
+- Repos: metapm(80), super-flashcards(141), artforge(70), harmonylab(35), etymython(178), portfolio-rag(17)
+- Manual trigger only: `POST /ingest/code`
+- Query filters: `repo=<name>` and `filetype=<type>` via `/semantic` endpoint
+- Note: `pie-network-graph` not on GitHub under coreyprator — not indexed
 
 ## OAuth 2.0 (Claude.ai Connector)
 

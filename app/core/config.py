@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    VERSION: str = "2.1.1"
+    VERSION: str = "2.2.0"
     BUILD: str = os.getenv("COMMIT_SHA", os.getenv("BUILD_ID", "unknown"))
 
     GITHUB_TOKEN: str = ""

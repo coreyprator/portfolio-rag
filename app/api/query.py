@@ -25,28 +25,57 @@ async def search_documents(q: str = Query(..., min_length=1), repo: str = None):
     return {"results": results, "total": len(results), "query": q}
 
 
+VALID_COLLECTIONS = {"portfolio", "etymology", "code"}
+
+
 @router.get("/semantic")
 async def semantic_search(
     q: str = Query(..., min_length=1),
     collection: Optional[str] = None,
     n: int = 5,
+    repo: Optional[str] = None,
+    filetype: Optional[str] = None,
 ):
-    """Semantic (ChromaDB/OpenAI) search. collection: 'portfolio', 'etymology', or omit for all."""
-    if collection and collection not in ("portfolio", "etymology"):
-        raise HTTPException(status_code=400, detail="collection must be 'portfolio' or 'etymology'")
+    """Semantic (ChromaDB/OpenAI) search.
+    collection: 'portfolio', 'etymology', 'code', or omit for portfolio+etymology.
+    repo: filter code collection by project name (e.g. 'artforge').
+    filetype: filter code collection by file type (e.g. 'route', 'model', 'schema').
+    """
+    if collection and collection not in VALID_COLLECTIONS:
+        raise HTTPException(status_code=400, detail=f"collection must be one of: {', '.join(sorted(VALID_COLLECTIONS))}")
     n = min(max(n, 1), 20)
-    results = vector_store.query(q, collection=collection, max_results=n)
+
+    # Build where clause for code collection filters
+    where = None
+    if repo or filetype:
+        if collection and collection != "code":
+            raise HTTPException(status_code=400, detail="repo/filetype filters only apply to collection='code'")
+        filters = []
+        if repo:
+            filters.append({"repo": {"$eq": repo}})
+        if filetype:
+            filters.append({"filetype": {"$eq": filetype}})
+        where = {"$and": filters} if len(filters) > 1 else filters[0]
+
+    results = vector_store.query(q, collection=collection, max_results=n, where=where)
     formatted = []
     for r in results:
         meta = r.get("metadata", {})
-        formatted.append({
+        entry = {
             "score": r.get("score"),
             "snippet": r.get("text", "")[:500],
             "source": meta.get("source_file") or meta.get("path", ""),
             "page": meta.get("page_number"),
             "section": meta.get("section") or meta.get("entry_headword", ""),
             "collection": r.get("collection"),
-        })
+        }
+        # Code collection extra fields
+        if r.get("collection") == "code":
+            entry["repo"] = meta.get("repo")
+            entry["filepath"] = meta.get("filepath")
+            entry["filetype"] = meta.get("filetype")
+            entry["last_commit"] = meta.get("last_commit")
+        formatted.append(entry)
     return {"query": q, "collection": collection or "all", "total": len(formatted), "results": formatted}
 
 
