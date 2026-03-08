@@ -1,14 +1,27 @@
 # Portfolio RAG -- Project Knowledge Document
 <!-- CHECKPOINT: PR-PK-F7A2 -->
 Generated: 2026-02-28 by CC Session
-Updated: 2026-03-07 -- Sprint PR-011 Code Collection (v2.2.0)
+Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-07 (PR-011 Code Collection, v2.2.0)
+### Latest Session Update -- 2026-03-08 (PR-MS4-MS1 Jazz Theory + Scheduler, v2.3.0)
+
+- **Sprint**: Jazz theory collection (Collection 4) + Cloud Scheduler re-ingestion
+- **Current Version**: v2.3.0 -- **DEPLOYED** to Cloud Run
+- **Health**: `{"status":"healthy","version":"2.3.0","collections":{"portfolio":556,"etymology":1835,"code":521,"jazz_theory":17}}`
+- **Cloud Run Revision**: portfolio-rag-00048-dsz
+- **New collection**: `jazz_theory` — 17 chunks from 5 seed markdown files (ii-V-I, modes, chord subs, Jobim, standards)
+- **New endpoint**: `POST /ingest/jazz_theory` — ingests seed docs from data/jazz_theory/
+- **New endpoint**: `POST /admin/reingest` — token-protected trigger for scheduled re-ingestion
+- **New secret**: `reingest-token` in Secret Manager (mapped to REINGEST_TOKEN env var)
+- **Cloud Scheduler**: `portfolio-rag-weekly-reingest` — Sunday 3am CT, triggers /admin/reingest for portfolio collection
+- **Auto-ingest**: jazz_theory collection auto-ingests on startup if empty (first deploy)
+- **Cross-collection search**: omitting collection param now searches portfolio + etymology + jazz_theory
+
+### Previous: PR-011 Code Collection (v2.2.0)
 
 - **Sprint**: Code collection — source code semantic search across 6 repos
-- **Current Version**: v2.2.0 -- **DEPLOYED** to Cloud Run
-- **Health**: `{"status":"healthy","version":"2.2.0","collections":{"portfolio":552,"etymology":1835,"code":521}}`
+- **Current Version**: v2.2.0
 - **Cloud Run Revision**: portfolio-rag-00044-7cn
 - **New collection**: `code` — 521 files from 6 repos (.py/.sql/.js), with repo/filepath/filetype/last_commit metadata
 - **New endpoint**: `POST /ingest/code` — clones repos, classifies files, embeds, upserts, backs up to GCS
@@ -81,6 +94,8 @@ Purpose: Canonical reference for all AI sessions working on this project.
 | `/ingest/portfolio` | POST | ChromaDB portfolio ingestion from GitHub. Auth required. |
 | `/ingest/etymology` | POST | ChromaDB etymology ingestion from Beekes PDF. Auth required. |
 | `/ingest/code` | POST | ChromaDB code ingestion — clones 6 repos, indexes .py/.sql/.js. Auth required. |
+| `/ingest/jazz_theory` | POST | ChromaDB jazz theory ingestion from seed docs. Auth required. |
+| `/admin/reingest` | POST | Trigger background re-ingestion. Auth: `X-Reingest-Token` header. Params: `?collection=portfolio\|jazz_theory`. |
 | `/ingest/all` | POST | Legacy: re-ingest all repos (keyword index) |
 | `/ingest/{repo}` | POST | Legacy: re-ingest specific repo |
 | `/documents` | GET | Legacy: browse indexed docs with filters |
@@ -138,14 +153,15 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 | Vector Store | ChromaDB PersistentClient (`/app/chroma_data`), GCS backup/restore on deploy |
 | GCS Backup | `gs://portfolio-rag-backups-57478301787/chromadb-backup/chroma_persist.tar.gz` |
 | Embeddings | OpenAI `text-embedding-3-small` via direct `openai.OpenAI()` client |
-| Collections | `portfolio` (552 chunks), `etymology` (1835 chunks, Beekes PDF), `code` (521 files from 6 repos) |
+| Collections | `portfolio` (556 chunks), `etymology` (1835 chunks, Beekes PDF), `code` (521 files from 6 repos), `jazz_theory` (17 chunks from 5 seed docs) |
 | Document Source | GitHub REST API (public repos, unauthenticated fallback if PAT expired) |
 | Legacy Index | In-memory Python dict (keyword search, kept for backward compatibility) |
 | MCP | Custom JSON-RPC 2.0 handler (no mcp library, direct FastAPI route) |
 | Auth (MCP) | `x-api-key` header OR `Authorization: Bearer` (raw key or signed HMAC token) |
 | Auth (ingestion) | Same as MCP auth (x-api-key or Bearer) |
 | OAuth | HMAC-SHA256 stateless tokens. Client ID: `portfolio-rag-client`. Secret: `rag-api-key` |
-| Re-ingestion | Cloud Scheduler daily at 8:00 UTC (job: portfolio-rag-daily-ingest) |
+| Auth (reingest) | `X-Reingest-Token` header, secret: `reingest-token` in Secret Manager |
+| Re-ingestion | Cloud Scheduler: `portfolio-rag-daily-ingest` (daily 8:00 UTC, portfolio), `portfolio-rag-weekly-reingest` (Sunday 3am CT, portfolio via /admin/reingest) |
 | CI/CD | GitHub Actions -> gcloud run deploy (needs GCP_SA_KEY secret) |
 
 ## Repos Indexed
@@ -165,7 +181,7 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 - **Protocol**: MCP Streamable HTTP (JSON-RPC 2.0)
 - **Auth**: `x-api-key` header OR `Authorization: Bearer <key>` (raw API key or signed HMAC token)
 - **Tool**: `query_portfolio(query: str, collection?: str, max_results?: int = 5) -> str`
-  - `collection`: `"portfolio"`, `"etymology"`, or omit for cross-collection search
+  - `collection`: `"portfolio"`, `"etymology"`, `"code"`, `"jazz_theory"`, or omit for cross-collection search (portfolio+etymology+jazz_theory)
   - `max_results`: 1-20 (default 5)
 - **Return format**: `[COLLECTION: {coll} | SOURCE: {file} | {section} | score: {score}]\n<content>` per result, separated by `---`
 - **Note**: cc-deploy SA cannot create secrets in Secret Manager. New secrets require cprator account.
@@ -194,6 +210,14 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 - Query filters: `repo=<name>` and `filetype=<type>` via `/semantic` endpoint
 - Note: `pie-network-graph` not on GitHub under coreyprator — not indexed
 
+### Jazz Theory Collection (17 chunks)
+- 5 seed markdown files in `data/jazz_theory/`: ii-V-I progressions, modes and scales, chord substitutions, Jobim harmony, common jazz standards
+- Chunked by H2/H3 headers (same as portfolio), min 100 chars per chunk
+- Metadata: source_file, section, project="jazz_theory", topic (from H1 heading), collection="jazz_theory", ingested_at
+- Auto-ingests on startup if collection empty
+- Manual trigger: `POST /ingest/jazz_theory` (auth required)
+- Purpose: Powers HarmonyLab riff library feature (HL-MS4-PART-B)
+
 ## OAuth 2.0 (Claude.ai Connector)
 
 - **Token Endpoint**: `POST /oauth/token`
@@ -219,13 +243,16 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 # Full deploy with all secrets
 gcloud run deploy portfolio-rag --source . --region us-central1 --allow-unauthenticated --project super-flashcards-475210 \
   --memory 2Gi --min-instances 1 --timeout 300 \
-  --update-secrets=GITHUB_TOKEN=portfolio-rag-github-token:latest,WEBHOOK_SECRET=portfolio-rag-webhook-secret:latest,RAG_API_KEY=rag-api-key:latest,OPENAI_API_KEY=openai-api-key:latest,OAUTH_CLIENT_ID=rag-oauth-client-id:latest
+  --update-secrets=GITHUB_TOKEN=portfolio-rag-github-token:latest,WEBHOOK_SECRET=portfolio-rag-webhook-secret:latest,RAG_API_KEY=rag-api-key:latest,OPENAI_API_KEY=openai-api-key:latest,OAUTH_CLIENT_ID=rag-oauth-client-id:latest,REINGEST_TOKEN=reingest-token:latest
 
 # Trigger portfolio re-ingestion (auth required)
 curl -X POST -H "x-api-key: <key>" -H "Content-Length: 0" https://portfolio-rag-57478301787.us-central1.run.app/ingest/portfolio
 
 # Trigger etymology ingestion (auth required, ~165s)
 curl -X POST -H "x-api-key: <key>" -H "Content-Length: 0" https://portfolio-rag-57478301787.us-central1.run.app/ingest/etymology
+
+# Trigger jazz theory ingestion (auth required)
+curl -X POST -H "x-api-key: <key>" -H "Content-Length: 0" https://portfolio-rag-57478301787.us-central1.run.app/ingest/jazz_theory
 
 # Check health
 curl https://portfolio-rag-57478301787.us-central1.run.app/health
