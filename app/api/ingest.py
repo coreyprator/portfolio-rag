@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.index import document_index
 from app.core.vectorstore import backup_to_gcs, vector_store
 from app.services.github import GitHubClient
-from app.services.ingestion import ingest_portfolio, ingest_etymology
+from app.services.ingestion import ingest_portfolio, ingest_etymology, ingest_jazz_theory
 
 # Repos to clone for code collection (repo key → GitHub path)
 CODE_REPOS = [
@@ -136,6 +136,21 @@ async def ingest_etymology_endpoint(
     _require_auth(x_api_key, authorization)
     start = time.time()
     result = await ingest_etymology()
+    duration = int((time.time() - start) * 1000)
+    result["duration_ms"] = duration
+    backup_to_gcs()
+    return result
+
+
+@router.post("/ingest/jazz_theory")
+async def ingest_jazz_theory_endpoint(
+    x_api_key: str | None = Header(None),
+    authorization: str | None = Header(None),
+):
+    """Ingest jazz theory seed docs into ChromaDB jazz_theory collection."""
+    _require_auth(x_api_key, authorization)
+    start = time.time()
+    result = await ingest_jazz_theory()
     duration = int((time.time() - start) * 1000)
     result["duration_ms"] = duration
     backup_to_gcs()

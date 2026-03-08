@@ -1,7 +1,8 @@
-"""Ingestion pipelines for portfolio and etymology collections."""
+"""Ingestion pipelines for portfolio, etymology, and jazz_theory collections."""
 
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 from app.core.config import settings
@@ -145,3 +146,71 @@ async def ingest_etymology(pdf_path: str = None) -> dict:
 
     logger.info(f"Etymology ingestion complete: {len(chunks)} chunks from {len(pages)} pages")
     return {"chunks": len(chunks), "pages": len(pages)}
+
+
+# Jazz theory seed files — bundled in Docker image under data/jazz_theory/
+JAZZ_THEORY_DIR = "data/jazz_theory"
+
+
+async def ingest_jazz_theory() -> dict:
+    """Ingest jazz theory markdown files into ChromaDB jazz_theory collection.
+
+    Reads .md files from data/jazz_theory/, chunks by H2/H3 headers,
+    embeds with OpenAI, and upserts into ChromaDB.
+    """
+    if not settings.OPENAI_API_KEY:
+        return {"error": "OPENAI_API_KEY not set", "chunks": 0}
+
+    # Look for seed files in Docker image (/app/) or repo root
+    candidates = [
+        os.path.join("/app", JAZZ_THEORY_DIR),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), JAZZ_THEORY_DIR),
+    ]
+    data_dir = None
+    for p in candidates:
+        if os.path.isdir(p):
+            data_dir = p
+            break
+    if data_dir is None:
+        return {"error": f"Jazz theory data dir not found. Searched: {candidates}", "chunks": 0}
+
+    md_files = sorted(f for f in os.listdir(data_dir) if f.endswith(".md"))
+    if not md_files:
+        return {"error": f"No .md files in {data_dir}", "chunks": 0}
+
+    # Delete collection for clean re-ingestion
+    vector_store.delete_collection("jazz_theory")
+
+    ingested_at = datetime.now(timezone.utc).isoformat()
+    all_chunks = []
+    file_stats = []
+
+    for filename in md_files:
+        filepath = os.path.join(data_dir, filename)
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Derive topic from H1 heading
+        h1_match = re.match(r"^#\s+(.+)", content)
+        topic = h1_match.group(1).strip() if h1_match else filename.replace(".md", "").replace("_", " ")
+
+        chunks = chunk_markdown(content, filename, "jazz_theory")
+        for chunk in chunks:
+            chunk["metadata"]["ingested_at"] = ingested_at
+            chunk["metadata"]["topic"] = topic
+            chunk["metadata"]["collection"] = "jazz_theory"
+        all_chunks.extend(chunks)
+        file_stats.append({"file": filename, "chunks": len(chunks), "topic": topic})
+        logger.info(f"Jazz theory: chunked {filename}: {len(chunks)} chunks (topic: {topic})")
+
+    if not all_chunks:
+        return {"chunks": 0, "files": file_stats}
+
+    ids = [f"jazz::{c['metadata']['source_file']}::{c['metadata']['section']}::{i}" for i, c in enumerate(all_chunks)]
+    documents = [c["text"] for c in all_chunks]
+    metadatas = [c["metadata"] for c in all_chunks]
+
+    vector_store.upsert("jazz_theory", ids, documents, metadatas)
+    logger.info(f"Jazz theory ingestion complete: {len(all_chunks)} chunks from {len(md_files)} files")
+
+    return {"chunks": len(all_chunks), "files": file_stats}

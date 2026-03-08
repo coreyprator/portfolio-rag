@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    VERSION: str = "2.2.0"
+    VERSION: str = "2.3.0"
     BUILD: str = os.getenv("COMMIT_SHA", os.getenv("BUILD_ID", "unknown"))
 
     GITHUB_TOKEN: str = ""
@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     RAG_API_KEY: str = ""
     OAUTH_CLIENT_ID: str = ""
     OPENAI_API_KEY: str = ""
+    REINGEST_TOKEN: str = ""
     REPO_OWNER: str = "coreyprator"
     REPOS: List[str] = [
         "project-methodology",

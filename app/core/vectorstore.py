@@ -139,7 +139,7 @@ class VectorStore:
             return self._query_collection(query_text, collection, max_results, where=where)
 
         all_results = []
-        for coll_name in ["portfolio", "etymology"]:
+        for coll_name in ["portfolio", "etymology", "jazz_theory"]:
             all_results.extend(self._query_collection(query_text, coll_name, max_results))
         all_results.sort(key=lambda x: x["distance"])
         return all_results[:max_results]
@@ -177,7 +177,7 @@ class VectorStore:
 
     def collection_counts(self) -> dict:
         counts = {}
-        for name in ["portfolio", "etymology", "code"]:
+        for name in ["portfolio", "etymology", "code", "jazz_theory"]:
             try:
                 coll = self.get_or_create_collection(name)
                 counts[name] = coll.count()

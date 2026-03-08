@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from app.core.config import settings
 from app.core.index import document_index
 from app.core.vectorstore import vector_store, restore_from_gcs
-from app.api import query, ingest, webhook, prompts, artifacts
+from app.api import query, ingest, webhook, prompts, artifacts, admin
 from app.api import mcp_endpoint, oauth
 from app.services.github import GitHubClient
 from app.services.ingestion import ingest_portfolio
@@ -59,7 +59,20 @@ async def _startup_chromadb():
     logger.info(f"ChromaDB post-init counts: {counts}")
 
     if counts.get("portfolio", 0) > 0 and counts.get("etymology", 0) > 0:
-        logger.info("Both collections populated from GCS backup — skipping ingestion")
+        logger.info("Core collections populated from GCS backup — skipping portfolio ingestion")
+        # Jazz theory might still need ingestion if this is first deploy with it
+        if counts.get("jazz_theory", 0) == 0:
+            logger.info("Jazz theory collection empty — ingesting from seed files...")
+            try:
+                from app.services.ingestion import ingest_jazz_theory
+                jt_result = await ingest_jazz_theory()
+                jt_chunks = jt_result.get("chunks", 0)
+                logger.info(f"Jazz theory ingestion complete: {jt_chunks} chunks")
+                if jt_chunks > 0:
+                    from app.core.vectorstore import backup_to_gcs
+                    backup_to_gcs()
+            except Exception as e:
+                logger.error(f"Jazz theory ingestion failed: {e}")
         return
 
     if not settings.OPENAI_API_KEY:
@@ -74,6 +87,16 @@ async def _startup_chromadb():
             logger.info(f"ChromaDB portfolio ingestion complete: {chunks} chunks")
         except Exception as e:
             logger.error(f"ChromaDB portfolio ingestion failed: {e}")
+
+    if counts.get("jazz_theory", 0) == 0:
+        logger.info("Jazz theory collection empty — ingesting from seed files...")
+        try:
+            from app.services.ingestion import ingest_jazz_theory
+            jt_result = await ingest_jazz_theory()
+            jt_chunks = jt_result.get("chunks", 0)
+            logger.info(f"Jazz theory ingestion complete: {jt_chunks} chunks")
+        except Exception as e:
+            logger.error(f"Jazz theory ingestion failed: {e}")
 
 
 @contextlib.asynccontextmanager
@@ -164,7 +187,9 @@ async def root():
             "POST /ingest/all",
             "POST /ingest/portfolio (ChromaDB semantic, auth required)",
             "POST /ingest/etymology (ChromaDB semantic, auth required)",
+            "POST /ingest/jazz_theory (ChromaDB semantic, auth required)",
             "POST /ingest/{repo}",
+            "POST /admin/reingest (scheduled re-ingestion, token auth)",
             "POST /webhook/github",
             "POST /prompts",
             "GET /prompts/{id}",
@@ -185,5 +210,6 @@ app.include_router(ingest.router, tags=["Ingestion"])
 app.include_router(webhook.router, tags=["Webhook"])
 app.include_router(prompts.router, tags=["Prompts"])
 app.include_router(artifacts.router, tags=["Artifacts"])
+app.include_router(admin.router)
 app.include_router(oauth.router)
 app.include_router(mcp_endpoint.router)
