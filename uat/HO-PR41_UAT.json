@@ -1,0 +1,155 @@
+{
+  "uat_version": "2.2",
+  "generated_by": "cc",
+  "generated_at": "2026-03-08T14:25:00Z",
+  "handoff_id": "HO-PR41",
+  "project": {
+    "name": "Portfolio RAG",
+    "emoji": "\ud83d\udd0d",
+    "version": "2.3.0",
+    "app_url": "https://portfolio-rag-57478301787.us-central1.run.app",
+    "health_url": "https://portfolio-rag-57478301787.us-central1.run.app/health",
+    "deployed_revision": "portfolio-rag-00048-dsz"
+  },
+  "context": {
+    "summary": "Added jazz_theory ChromaDB collection (17 chunks from 5 seed docs) and /admin/reingest endpoint with Cloud Scheduler for weekly portfolio re-ingestion.",
+    "root_cause": "N/A (new feature)",
+    "files_modified": [
+      "app/core/config.py",
+      "app/core/vectorstore.py",
+      "app/api/query.py",
+      "app/api/ingest.py",
+      "app/api/admin.py (new)",
+      "app/main.py",
+      "app/services/ingestion.py",
+      "data/jazz_theory/ii_V_I_progressions.md (new)",
+      "data/jazz_theory/modes_and_scales.md (new)",
+      "data/jazz_theory/chord_substitutions.md (new)",
+      "data/jazz_theory/jobim_harmony.md (new)",
+      "data/jazz_theory/common_jazz_standards.md (new)"
+    ],
+    "commit": "e10217f",
+    "risk_areas": [
+      "Jazz theory auto-ingestion on startup adds latency to cold start",
+      "Cross-collection search now includes jazz_theory — could affect unrelated queries"
+    ]
+  },
+  "sections": [
+    {
+      "id": "section-1",
+      "title": "Jazz Theory Collection — Semantic Search",
+      "tests": [
+        {
+          "id": "PR41-01",
+          "title": "Health shows jazz_theory collection",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/health in browser.",
+          "expected": "Response includes 'jazz_theory' key in collections object with chunk count > 0.",
+          "category": "fix_verification",
+          "priority": "critical"
+        },
+        {
+          "id": "PR41-02",
+          "title": "ii-V-I query returns relevant chunks",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=ii+V+I+progression&collection=jazz_theory&n=3",
+          "expected": "Top result is from ii_V_I_progressions.md with score > 0.4.",
+          "category": "fix_verification",
+          "priority": "critical"
+        },
+        {
+          "id": "PR41-03",
+          "title": "Jobim query returns jobim_harmony chunks",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=Jobim&collection=jazz_theory&n=3",
+          "expected": "Results are from jobim_harmony.md. Top result mentions Jobim.",
+          "category": "fix_verification",
+          "priority": "critical"
+        },
+        {
+          "id": "PR41-04",
+          "title": "Altered scale query returns modes content",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=altered+scale&collection=jazz_theory&n=3",
+          "expected": "Top result is 'Altered Scale (Super Locrian)' from modes_and_scales.md.",
+          "category": "fix_verification",
+          "priority": "high"
+        },
+        {
+          "id": "PR41-05",
+          "title": "Autumn Leaves query returns standards content",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=Autumn+Leaves&collection=jazz_theory&n=3",
+          "expected": "Top result mentions Autumn Leaves from common_jazz_standards.md.",
+          "category": "fix_verification",
+          "priority": "high"
+        },
+        {
+          "id": "PR41-06",
+          "title": "Tritone substitution query",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=tritone+substitution&collection=jazz_theory&n=3",
+          "expected": "Top result is from chord_substitutions.md describing tritone sub.",
+          "category": "fix_verification",
+          "priority": "high"
+        }
+      ]
+    },
+    {
+      "id": "section-2",
+      "title": "Admin Reingest Endpoint",
+      "tests": [
+        {
+          "id": "PR41-07",
+          "title": "Reingest with wrong token returns 403",
+          "description": "POST to /admin/reingest?collection=portfolio with X-Reingest-Token: wrong-token and Content-Length: 0.",
+          "expected": "HTTP 403 with body {\"detail\":\"Forbidden\"}.",
+          "category": "fix_verification",
+          "priority": "critical"
+        },
+        {
+          "id": "PR41-08",
+          "title": "Reingest with correct token returns 200",
+          "description": "POST to /admin/reingest?collection=portfolio with correct X-Reingest-Token and Content-Length: 0.",
+          "expected": "HTTP 200 with {\"status\":\"ingestion_started\",\"collection\":\"portfolio\"}.",
+          "category": "fix_verification",
+          "priority": "critical"
+        },
+        {
+          "id": "PR41-09",
+          "title": "Reingest with invalid collection returns 400",
+          "description": "POST to /admin/reingest?collection=bogus with correct token and Content-Length: 0.",
+          "expected": "HTTP 400 indicating invalid collection.",
+          "category": "fix_verification",
+          "priority": "high"
+        }
+      ]
+    },
+    {
+      "id": "section-3",
+      "title": "Regression — Existing Collections",
+      "tests": [
+        {
+          "id": "PR41-10",
+          "title": "Portfolio collection still works",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=deploy+protocol&collection=portfolio&n=3",
+          "expected": "Returns portfolio results with scores. Collection count unchanged (~556).",
+          "category": "regression",
+          "priority": "critical"
+        },
+        {
+          "id": "PR41-11",
+          "title": "Etymology collection still works",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=logos&collection=etymology&n=3",
+          "expected": "Returns etymology results from Beekes PDF. Collection count unchanged (~1835).",
+          "category": "regression",
+          "priority": "high"
+        },
+        {
+          "id": "PR41-12",
+          "title": "Code collection still works",
+          "description": "Open https://portfolio-rag-57478301787.us-central1.run.app/semantic?q=midi+parser&collection=code&n=3",
+          "expected": "Returns code results with repo/filepath metadata. Collection count unchanged (~521).",
+          "category": "regression",
+          "priority": "high"
+        }
+      ]
+    }
+  ],
+  "test_data_notes": "All tests can be run via browser or curl against the production URL. No setup required.",
+  "cc_observations": "Jazz theory chunks are small (17 total) since seed docs are short. The chunk_markdown function skips sections under 100 chars, so some H2 sections were grouped. Cloud Scheduler job runs Sunday 3am CT — first execution is 2026-03-15."
+}
