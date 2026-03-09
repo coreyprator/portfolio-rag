@@ -25,7 +25,7 @@ async def search_documents(q: str = Query(..., min_length=1), repo: str = None):
     return {"results": results, "total": len(results), "query": q}
 
 
-VALID_COLLECTIONS = {"portfolio", "etymology", "code", "jazz_theory"}
+VALID_COLLECTIONS = {"portfolio", "etymology", "code", "jazz_theory", "dcc"}
 
 
 @router.get("/semantic")

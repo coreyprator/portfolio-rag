@@ -7,6 +7,7 @@ import time
 import logging
 
 from fastapi import APIRouter, HTTPException, Header
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.index import document_index
@@ -249,6 +250,62 @@ async def ingest_code(
         "total_files": total,
         "repos": repo_stats,
         "skipped_repos": skipped_repos,
+        "duration_ms": duration,
+    }
+
+
+class CustomChunk(BaseModel):
+    id: str
+    content: str
+    metadata: dict = {}
+
+
+class CustomIngestRequest(BaseModel):
+    collection: str
+    chunks: list[CustomChunk]
+    replace_collection: bool = False
+
+
+ALLOWED_CUSTOM_COLLECTIONS = {"dcc", "portfolio", "etymology", "jazz_theory"}
+
+
+@router.post("/ingest/custom")
+async def ingest_custom(
+    body: CustomIngestRequest,
+    x_api_key: str | None = Header(None),
+    authorization: str | None = Header(None),
+):
+    """Ingest arbitrary chunks into a named ChromaDB collection.
+
+    Accepts: collection name, list of {id, content, metadata} chunks.
+    If replace_collection=True, wipes the collection before ingesting.
+    Auth: same x-api-key as other ingest endpoints.
+    """
+    _require_auth(x_api_key, authorization)
+
+    if body.collection not in ALLOWED_CUSTOM_COLLECTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"collection must be one of: {', '.join(sorted(ALLOWED_CUSTOM_COLLECTIONS))}"
+        )
+
+    start = time.time()
+
+    if body.replace_collection:
+        vector_store.delete_collection(body.collection)
+
+    ids = [c.id for c in body.chunks]
+    documents = [c.content for c in body.chunks]
+    metadatas = [c.metadata for c in body.chunks]
+
+    total = vector_store.upsert(body.collection, ids=ids, documents=documents, metadatas=metadatas)
+    backup_to_gcs()
+
+    duration = int((time.time() - start) * 1000)
+    return {
+        "collection": body.collection,
+        "chunks_ingested": total,
+        "status": "success",
         "duration_ms": duration,
     }
 
