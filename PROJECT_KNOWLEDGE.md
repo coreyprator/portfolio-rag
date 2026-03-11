@@ -111,6 +111,40 @@ Purpose: Canonical reference for all AI sessions working on this project.
 | `/artifacts/{sprint_id}` | POST/GET | Sprint closeout artifacts |
 | `/oauth/token` | POST | OAuth 2.0 client_credentials grant |
 
+## Schema
+
+**Introspection URL:** https://portfolio-rag-57478301787.us-central1.run.app/openapi.json
+**Framework:** FastAPI (auto-generated OpenAPI 3.x)
+
+Phase 0 schema fetch:
+```bash
+curl -s https://portfolio-rag-57478301787.us-central1.run.app/openapi.json | python -c "
+import sys, json
+spec = json.load(sys.stdin)
+paths = spec.get('paths', {})
+for p in sorted(paths.keys()):
+    print(p)
+"
+```
+
+Key endpoint paths (update as routes change):
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| /health | GET | Health check (503 until ChromaDB ready) |
+| /semantic | GET | Semantic search via ChromaDB |
+| /query | GET | Legacy keyword search |
+| /documents | GET | List indexed documents |
+| /ingest/custom | POST | Custom chunk ingestion (auth: x-api-key) |
+| /ingest/code | POST | Re-ingest code repos (manual trigger) |
+| /ingest/portfolio | POST | Re-ingest portfolio docs |
+| /admin/reingest | POST | Background re-ingestion (X-Reingest-Token) |
+| /prompts | GET, POST | Prompt lifecycle management |
+| /prompts/{prompt_id} | GET, PATCH | Get or update prompt |
+| /artifacts/{sprint_id} | POST, GET | Sprint closeout artifacts |
+| /oauth/token | POST | OAuth 2.0 client_credentials grant |
+
+---
+
 ## Doc Type Taxonomy
 
 | doc_type | Match Rule |
