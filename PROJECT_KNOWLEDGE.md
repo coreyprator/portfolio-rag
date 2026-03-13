@@ -4,15 +4,43 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-13 (PR-BROWSER-001 Browser Search, v2.6.0)
+### Latest Session Update -- 2026-03-13 (PR-MCP-RAG-TOOLS-001, v2.7.0)
+
+- **Sprint**: PR-MCP-RAG-TOOLS-001 -- rag_query + rag_get_document MCP tools
+- **Current Version**: v2.7.0 -- **DEPLOYED** to Cloud Run
+- **Health**: `{"status":"healthy","version":"2.7.0","collections":{"portfolio":615,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
+- **New MCP tool**: `rag_query(query, collection="portfolio", n=5)` -- semantic search across all 6 collections
+- **New MCP tool**: `rag_get_document(source, collection="portfolio")` -- retrieve all chunks by source path
+- **New method**: `VectorStore.query_by_metadata(collection, where, limit)` -- metadata-filtered retrieval
+- **Existing tool kept**: `query_portfolio` unchanged for backward compatibility
+- **MCP tools/list now returns 3 tools**: query_portfolio, rag_query, rag_get_document
+
+## CAI MCP Tool Access -- Portfolio RAG
+
+Two MCP tools available to CAI via claude.ai:
+
+rag_query(query, collection="portfolio", n=5)
+  - Semantic search across all collections
+  - Use before writing any CC prompt to retrieve current standards
+  - Collections: portfolio, metapm, etymology, dcc, code, jazz_theory
+
+rag_get_document(source, collection="portfolio")
+  - Retrieve all chunks from a specific document
+  - Source path as returned by rag_query (e.g. "project-methodology/docs/CAI_Outbound_CC_Prompt_Standard.md")
+
+CAI workflow (mandatory):
+  1. rag_query("CAI Outbound CC Prompt Standard") -- read quality checklist
+  2. rag_query("Bootstrap Session Close-Out") -- verify Section 10 requirements
+  3. Produce CC prompt
+  4. Run CAI pre-delivery gate against retrieved standards
+  5. Deliver to PL
+
+### Previous: PR-BROWSER-001 Browser Search (v2.6.0)
 
 - **Sprint**: PR-BROWSER-001 -- public browser search interface
-- **Current Version**: v2.6.0 -- **DEPLOYED** to Cloud Run
-- **Health**: `{"status":"healthy","version":"2.6.0","collections":{"portfolio":615,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
 - **New route**: GET `/search` -- self-contained HTML page, no auth required
 - **Page features**: query input, collection dropdown (dcc/beekes/portfolio/metapm), result count selector (3/5/10), search button
 - **Implementation**: `app/api/search.py` -- HTMLResponse with inline JS calling `/semantic` via client-side fetch()
-- **No auth needed**: `/semantic` endpoint is public (confirmed Phase 0). Page calls it directly from browser.
 - **MetaPM integration**: RAG Search link added to all MetaPM nav bars (dashboard, handoffs, capture, compare). Opens /search in new tab.
 - **External user URL**: https://portfolio-rag-57478301787.us-central1.run.app/search
 
