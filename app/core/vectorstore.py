@@ -175,6 +175,27 @@ class VectorStore:
             })
         return formatted
 
+    def query_by_metadata(self, collection: str, where: dict,
+                          limit: int = 50) -> list[dict]:
+        """Retrieve documents by metadata filter (no embedding query needed)."""
+        try:
+            coll = self.get_or_create_collection(collection)
+            results = coll.get(where=where, limit=limit, include=["documents", "metadatas"])
+        except Exception as e:
+            logger.error(f"Metadata query error on {collection}: {e}")
+            return []
+
+        formatted = []
+        docs = results.get("documents", [])
+        metadatas = results.get("metadatas", [])
+        for doc, meta in zip(docs, metadatas):
+            formatted.append({
+                "text": doc,
+                "metadata": meta,
+                "collection": collection,
+            })
+        return formatted
+
     def collection_counts(self) -> dict:
         counts = {}
         for name in ["portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm"]:
