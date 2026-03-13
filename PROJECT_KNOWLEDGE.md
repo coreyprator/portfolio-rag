@@ -4,7 +4,19 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-12 (PR-009 MetaPM RAG Sync, v2.5.0)
+### Latest Session Update -- 2026-03-13 (PR-BROWSER-001 Browser Search, v2.6.0)
+
+- **Sprint**: PR-BROWSER-001 -- public browser search interface
+- **Current Version**: v2.6.0 -- **DEPLOYED** to Cloud Run
+- **Health**: `{"status":"healthy","version":"2.6.0","collections":{"portfolio":615,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
+- **New route**: GET `/search` -- self-contained HTML page, no auth required
+- **Page features**: query input, collection dropdown (dcc/beekes/portfolio/metapm), result count selector (3/5/10), search button
+- **Implementation**: `app/api/search.py` -- HTMLResponse with inline JS calling `/semantic` via client-side fetch()
+- **No auth needed**: `/semantic` endpoint is public (confirmed Phase 0). Page calls it directly from browser.
+- **MetaPM integration**: RAG Search link added to all MetaPM nav bars (dashboard, handoffs, capture, compare). Opens /search in new tab.
+- **External user URL**: https://portfolio-rag-57478301787.us-central1.run.app/search
+
+### Previous: PR-009 MetaPM RAG Sync (v2.5.0)
 
 - **Sprint**: PR-009 — sync MetaPM requirements into Portfolio RAG as searchable `metapm` collection
 - **Current Version**: v2.5.0 — **DEPLOYED** to Cloud Run
