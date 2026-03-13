@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from app.core.config import settings
 from app.core.index import document_index
 from app.core.vectorstore import vector_store, restore_from_gcs
-from app.api import query, ingest, webhook, prompts, artifacts, admin
+from app.api import query, ingest, webhook, prompts, artifacts, admin, search
 from app.api import mcp_endpoint, oauth
 from app.services.github import GitHubClient
 from app.services.ingestion import ingest_portfolio
@@ -200,6 +200,7 @@ async def root():
             "GET /artifacts/{sprint_id}",
             "POST /oauth/token (OAuth 2.0 client_credentials grant)",
             "POST /mcp (MCP Streamable HTTP - requires x-api-key or Bearer token)",
+            "GET /search (browser search UI, no auth)",
         ],
     }
 
@@ -213,3 +214,4 @@ app.include_router(artifacts.router, tags=["Artifacts"])
 app.include_router(admin.router)
 app.include_router(oauth.router)
 app.include_router(mcp_endpoint.router)
+app.include_router(search.router, tags=["Search"])

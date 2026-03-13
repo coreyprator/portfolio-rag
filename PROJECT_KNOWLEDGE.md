@@ -4,7 +4,23 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-08 (PR-MS4-MS1 Jazz Theory + Scheduler, v2.3.0)
+### Latest Session Update -- 2026-03-12 (PR-009 MetaPM RAG Sync, v2.5.0)
+
+- **Sprint**: PR-009 — sync MetaPM requirements into Portfolio RAG as searchable `metapm` collection
+- **Current Version**: v2.5.0 — **DEPLOYED** to Cloud Run
+- **Health**: `{"status":"healthy","version":"2.5.0","collections":{"portfolio":611,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
+- **New collection**: `metapm` — 313 chunks, one per MetaPM requirement
+- **Chunk ID format**: `metapm::{uuid}` (requirement UUID, not code, due to duplicate codes)
+- **Chunk schema**: REQUIREMENT/PROJECT/TITLE/STATUS/PRIORITY/TYPE/PTH/DESCRIPTION/CREATED/UPDATED
+- **Metadata**: source=MetaPM, code, project, status, priority, pth, version=1.0
+- **Sync**: MetaPM POST /api/rag/sync triggers full re-sync (batched, replace_collection=true)
+- **Cloud Scheduler**: PENDING — cc-deploy lacks `cloudscheduler.jobs.create` permission. PL must create manually:
+  `gcloud scheduler jobs create http metapm-rag-sync --location=us-central1 --schedule="0 2 * * *" --uri=https://metapm.rentyourcio.com/api/rag/sync --http-method=POST --time-zone=America/Chicago --headers=Content-Type=application/json,Content-Length=0`
+- **ALLOWED_CUSTOM_COLLECTIONS**: now includes `metapm`
+- **VALID_COLLECTIONS**: now includes `metapm`
+- **No cross-collection default**: metapm excluded from default multi-collection search (query only when `collection=metapm` specified)
+
+### Previous: PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 
 - **Sprint**: Jazz theory collection (Collection 4) + Cloud Scheduler re-ingestion
 - **Current Version**: v2.3.0 -- **DEPLOYED** to Cloud Run
@@ -251,6 +267,15 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 - Auto-ingests on startup if collection empty
 - Manual trigger: `POST /ingest/jazz_theory` (auth required)
 - Purpose: Powers HarmonyLab riff library feature (HL-MS4-PART-B)
+
+### MetaPM Collection (313 chunks)
+- One chunk per MetaPM requirement (all projects: HarmonyLab, MetaPM, SF, PR, PM, Etymython, EFG, ArtForge, African Safari)
+- Chunk ID: `metapm::{requirement_uuid}` (UUIDs, not codes — MetaPM has duplicate codes like REQ-001)
+- Content format: structured text with REQUIREMENT/PROJECT/TITLE/STATUS/PRIORITY/TYPE/PTH/DESCRIPTION/CREATED/UPDATED
+- Metadata: source="MetaPM", code, project, status, priority, pth, version="1.0"
+- Sync: MetaPM `POST /api/rag/sync` fetches all requirements from DB, builds chunks, POSTs to `/ingest/custom` in batches of 25 with `replace_collection=true`
+- Nightly sync: Cloud Scheduler `metapm-rag-sync` at 2am CT (PENDING creation — needs PL)
+- Not included in cross-collection default search; query with `collection=metapm` explicitly
 
 ## OAuth 2.0 (Claude.ai Connector)
 

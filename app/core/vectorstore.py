@@ -177,7 +177,7 @@ class VectorStore:
 
     def collection_counts(self) -> dict:
         counts = {}
-        for name in ["portfolio", "etymology", "code", "jazz_theory", "dcc"]:
+        for name in ["portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm"]:
             try:
                 coll = self.get_or_create_collection(name)
                 counts[name] = coll.count()

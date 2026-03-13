@@ -266,7 +266,7 @@ class CustomIngestRequest(BaseModel):
     replace_collection: bool = False
 
 
-ALLOWED_CUSTOM_COLLECTIONS = {"dcc", "portfolio", "etymology", "jazz_theory"}
+ALLOWED_CUSTOM_COLLECTIONS = {"dcc", "portfolio", "etymology", "jazz_theory", "metapm"}
 
 
 @router.post("/ingest/custom")
