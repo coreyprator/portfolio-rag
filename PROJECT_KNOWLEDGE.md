@@ -15,6 +15,40 @@ Purpose: Canonical reference for all AI sessions working on this project.
 - **Existing tool kept**: `query_portfolio` unchanged for backward compatibility
 - **MCP tools/list now returns 3 tools**: query_portfolio, rag_query, rag_get_document
 
+## CAI Access -- Semantic Search
+
+The correct endpoint for CAI to retrieve standards and methodology documents:
+
+  GET https://portfolio-rag-57478301787.us-central1.run.app/semantic
+  Params: q={QUERY}&collection={COLLECTION}&n={N}
+  Auth: none required
+  Response: JSON {query, collection, total, results[{score, snippet, source, section}]}
+
+Collections:
+  portfolio   -- methodology, standards, Bootstrap, PK.md (627 chunks)
+  etymology   -- Beekes dictionary (1835 chunks)
+  code        -- source code (521 chunks)
+  jazz_theory -- jazz theory (17 chunks)
+  dcc         -- Greek core vocab (519 chunks)
+  metapm      -- requirements (313 chunks)
+
+Example queries:
+  /semantic?q=CAI+Outbound+CC+Prompt+Standard&collection=portfolio&n=5
+  /semantic?q=Bootstrap+deliverable+canary+gate&collection=portfolio&n=3
+  /semantic?q=MetaPM+state+transitions&collection=metapm&n=5
+
+Confirmed working scores (2026-03-13):
+  "CAI Outbound CC Prompt Standard" -> 0.551-0.586
+  "Bootstrap Session Close-Out"     -> 0.636
+
+CAI mandatory workflow (per Bootstrap):
+  1. Query /semantic for required standards before writing any CC prompt
+  2. If URL not yet whitelisted: ask PL to paste the URL
+  3. Only declare document unreachable after RAG + web_fetch both attempted
+
+Note: /query endpoint (keyword search, legacy) also exists. Do not confuse
+with /semantic (vector/ChromaDB semantic search). CAI should always use /semantic.
+
 ## CAI MCP Tool Access -- Portfolio RAG
 
 Two MCP tools available to CAI via claude.ai:
