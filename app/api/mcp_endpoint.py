@@ -1,4 +1,4 @@
-"""MCP Streamable HTTP endpoint - JSON-RPC handler with API key + Bearer auth."""
+"""MCP Streamable HTTP endpoint - JSON-RPC handler (public, no auth required)."""
 
 import logging
 
@@ -146,11 +146,9 @@ async def mcp_handler(
     x_api_key: str | None = Header(None),
     authorization: str | None = Header(None),
 ):
-    """MCP Streamable HTTP endpoint. Handles JSON-RPC 2.0 requests."""
-    auth_error = _check_auth(x_api_key, authorization)
-    if auth_error:
-        return auth_error
-
+    """MCP Streamable HTTP endpoint. Handles JSON-RPC 2.0 requests.
+    No auth required -- allows Claude.ai connector and other MCP clients
+    to connect without API keys or custom headers."""
     body = await request.json()
     method = body.get("method")
     request_id = body.get("id")
