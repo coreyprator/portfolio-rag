@@ -4,11 +4,17 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-13 (PR-MCP-RAG-TOOLS-001, v2.7.0)
+### Latest Session Update -- 2026-03-14 (PR-MCP-HEADER-001, v2.7.1)
+
+- **Sprint**: PR-MCP-HEADER-001 -- remove auth from /mcp endpoint
+- **Current Version**: v2.7.1 -- **DEPLOYED** to Cloud Run
+- **Health**: `{"status":"healthy","version":"2.7.1","collections":{"portfolio":627,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
+- **Fix**: Auth check removed from /mcp handler. Claude.ai connector can now connect without API keys or custom headers.
+- **MCP endpoint**: POST /mcp -- public, no auth required. All other endpoints unchanged.
+
+### Previous: PR-MCP-RAG-TOOLS-001 (v2.7.0)
 
 - **Sprint**: PR-MCP-RAG-TOOLS-001 -- rag_query + rag_get_document MCP tools
-- **Current Version**: v2.7.0 -- **DEPLOYED** to Cloud Run
-- **Health**: `{"status":"healthy","version":"2.7.0","collections":{"portfolio":615,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
 - **New MCP tool**: `rag_query(query, collection="portfolio", n=5)` -- semantic search across all 6 collections
 - **New MCP tool**: `rag_get_document(source, collection="portfolio")` -- retrieve all chunks by source path
 - **New method**: `VectorStore.query_by_metadata(collection, where, limit)` -- metadata-filtered retrieval

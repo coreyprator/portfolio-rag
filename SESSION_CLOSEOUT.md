@@ -1,37 +1,37 @@
 # SESSION_CLOSEOUT.md
 
 ## Sprint
-PR-GET-QUERY-001 (PTH-PG01) -- Document GET /semantic URL for CAI access
+PR-MCP-HEADER-001 (PTH-PR01) -- Remove auth from /mcp endpoint for Claude.ai
 
 ## Version
-2.7.0 (no change -- documentation only)
+2.7.1
 
 ## Commits
-- 06d1240: docs: add CAI semantic search URL to PROJECT_KNOWLEDGE.md (PG01)
+- 81c7c16: v2.7.1: PR-MCP-HEADER-001 -- remove auth from /mcp endpoint
 
 ## Deploy
-No deploy needed. /semantic endpoint already existed at v2.7.0.
+Cloud Run revision portfolio-rag-00062-5g7. v2.7.1 serving 100%.
 
 ## Health
-`{"status":"healthy","version":"2.7.0","collections":{"portfolio":627,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
+`{"status":"healthy","version":"2.7.1","collections":{"portfolio":627,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
 
 ## Handoff ID
-A1E26C17-8D99-4F76-9117-4836BA29D5AB
+2BFCA1ED-C677-4EA0-9D76-05C6594714EC
 
 ## UAT ID
-0E1A530E-BB68-49D9-A879-F25FC765B5B5 (status: passed)
+D0C2D240-D3E7-4C2D-9155-D0D303DB7337 (status: conditional_pass)
 
 ## Artifacts
-- PROJECT_KNOWLEDGE.md updated with "CAI Access -- Semantic Search" section
-- PR-GET-QUERY-001 seeded at cc_complete (checkpoint 252F)
+- mcp_endpoint.py: auth check bypassed on /mcp handler
+- PR-MCP-HEADER-001 seeded at cc_complete (checkpoint 6FCC)
 
 ## Lessons Learned
-- Phase 0 STOP gate prevented unnecessary code. The /semantic endpoint already existed and worked without auth. The sprint's real problem was a missing URL in documentation, not a missing endpoint.
-- CAI was trying POST /api/query (wrong path, wrong method). Correct URL: GET /semantic?q=...&collection=...&n=...
-- Option A (document existing endpoint) chosen over Option B (build new endpoint) after PL approval.
+- Sprint prompt assumed blocker was a beta header (mcp-client-2025-04-04). Phase 0 found the real blocker was the API key auth check (_check_auth). Same fix intent, different root cause.
+- The /mcp endpoint now accepts unauthenticated requests. This is acceptable because the data served (portfolio docs, methodology, standards) is already public via /semantic and /search.
+- _check_auth function kept in file for potential reuse by other endpoints. Only the call site in mcp_handler was removed.
 
 ## What Next Session Needs to Know
-- /semantic is the primary CAI access endpoint. No auth. All 6 collections.
-- /query is legacy keyword search. Different from /semantic.
-- MCP tools (rag_query, rag_get_document) also available for CAI via claude.ai MCP connection.
-- CAI now has three access paths: web_fetch to /semantic, MCP tools, and /search browser page.
+- /mcp is now public (no auth). Claude.ai connector should show "Connected" status.
+- MCP tools available: query_portfolio, rag_query, rag_get_document.
+- Other auth-protected endpoints (POST /ingest/*) still require x-api-key or Bearer token.
+- PL needs to verify BV-01 through BV-03 in Claude.ai (connector Connected, tools visible, query returns results).
