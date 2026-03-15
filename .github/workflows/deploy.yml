@@ -60,6 +60,10 @@ jobs:
           HEALTH=$(curl -s "$SERVICE_URL/health")
           echo "Health check passed: $HEALTH" >> $GITHUB_STEP_SUMMARY
 
+      - name: Index code to Portfolio RAG
+        run: |
+          curl -s -X POST             https://portfolio-rag-57478301787.us-central1.run.app/ingest/code             -H "x-api-key: ${{ secrets.RAG_API_KEY }}"             -H "Content-Type: application/json"             -d '{"repo": "${{ github.event.repository.name }}", "collection": "code"}'             --max-time 120 || echo "RAG index failed -- non-blocking"
+
       - name: Deployment Summary
         run: |
           echo "Deployment successful!" >> $GITHUB_STEP_SUMMARY
