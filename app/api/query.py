@@ -35,11 +35,13 @@ async def semantic_search(
     n: int = 5,
     repo: Optional[str] = None,
     filetype: Optional[str] = None,
+    sources: Optional[str] = None,
 ):
     """Semantic (ChromaDB/OpenAI) search.
     collection: 'portfolio', 'etymology', 'code', or omit for portfolio+etymology.
     repo: filter code collection by project name (e.g. 'artforge').
     filetype: filter code collection by file type (e.g. 'route', 'model', 'schema').
+    sources: comma-separated source filenames to filter by (e.g. 'Beekes.pdf,Kroonen.pdf').
     """
     if collection and collection not in VALID_COLLECTIONS:
         raise HTTPException(status_code=400, detail=f"collection must be one of: {', '.join(sorted(VALID_COLLECTIONS))}")
@@ -57,13 +59,28 @@ async def semantic_search(
             filters.append({"filetype": {"$eq": filetype}})
         where = {"$and": filters} if len(filters) > 1 else filters[0]
 
+    # Source-level filtering (works on any collection)
+    if sources:
+        source_list = [s.strip() for s in sources.split(",")]
+        if len(source_list) == 1:
+            source_filter = {"source_file": source_list[0]}
+        else:
+            source_filter = {"$or": [{"source_file": s} for s in source_list]}
+        # Merge with existing where if both present
+        if where:
+            where = {"$and": [where, source_filter]}
+        else:
+            where = source_filter
+
     results = vector_store.query(q, collection=collection, max_results=n, where=where)
     formatted = []
     for r in results:
         meta = r.get("metadata", {})
+        full_text = r.get("text", "")
         entry = {
             "score": r.get("score"),
-            "snippet": r.get("text", "")[:500],
+            "snippet": full_text[:500],
+            "full_text": full_text,
             "source": meta.get("source_file") or meta.get("path", ""),
             "page": meta.get("page_number"),
             "section": meta.get("section") or meta.get("entry_headword", ""),
