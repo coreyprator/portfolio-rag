@@ -149,3 +149,47 @@ async def list_documents(
         repos_grouped[r]["documents"].append(d)
         repos_grouped[r]["document_count"] += 1
     return {"total": len(docs), "repos": repos_grouped}
+
+
+# Expected PK source files for all portfolio projects
+_PK_PROJECTS = [
+    {"project": "MetaPM", "source": "metapm/PROJECT_KNOWLEDGE.md"},
+    {"project": "Super Flashcards", "source": "Super-Flashcards/PROJECT_KNOWLEDGE.md"},
+    {"project": "ArtForge", "source": "ArtForge/PROJECT_KNOWLEDGE.md"},
+    {"project": "HarmonyLab", "source": "harmonylab/PROJECT_KNOWLEDGE.md"},
+    {"project": "Etymython", "source": "etymython/PROJECT_KNOWLEDGE.md"},
+    {"project": "PIE Network Graph", "source": "pie-network-graph/PROJECT_KNOWLEDGE.md"},
+    {"project": "Portfolio RAG", "source": "portfolio-rag/PROJECT_KNOWLEDGE.md"},
+    {"project": "Personal Assistant", "source": "personal-assistant/PROJECT_KNOWLEDGE.md"},
+    {"project": "project-methodology", "source": "project-methodology/PROJECT_KNOWLEDGE.md"},
+]
+
+
+@router.get("/api/pk-status")
+async def pk_status():
+    """Returns ingestion status for all project PK.md files in the portfolio collection."""
+    results = []
+    for pk in _PK_PROJECTS:
+        chunks = vector_store.query_by_metadata(
+            "portfolio",
+            where={"source_file": pk["source"]},
+            limit=1,
+        )
+        if chunks:
+            meta = chunks[0].get("metadata", {})
+            results.append({
+                "project": pk["project"],
+                "source": pk["source"],
+                "status": "indexed",
+                "chunks": len(vector_store.query_by_metadata(
+                    "portfolio", where={"source_file": pk["source"]}, limit=200
+                )),
+                "ingested_at": meta.get("ingested_at", "unknown"),
+            })
+        else:
+            results.append({
+                "project": pk["project"],
+                "source": pk["source"],
+                "status": "missing",
+            })
+    return results

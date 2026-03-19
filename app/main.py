@@ -201,6 +201,7 @@ async def root():
             "POST /oauth/token (OAuth 2.0 client_credentials grant)",
             "POST /mcp (MCP Streamable HTTP - requires x-api-key or Bearer token)",
             "GET /search (browser search UI, no auth)",
+            "GET /api/pk-status (PK.md ingestion status for all projects)",
         ],
     }
 

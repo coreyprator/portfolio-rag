@@ -26,6 +26,14 @@ PORTFOLIO_FILES = [
     {"repo": "portfolio-rag", "path": "PROJECT_KNOWLEDGE.md", "project": "PortfolioRAG"},
 ]
 
+# Non-GitHub repos: PK files stored in GCS (gs://corey-handoff-bridge/pk-docs/)
+GCS_PORTFOLIO_FILES = [
+    {"gcs_path": "pk-docs/personal-assistant/PROJECT_KNOWLEDGE.md", "source": "personal-assistant/PROJECT_KNOWLEDGE.md", "project": "PersonalAssistant"},
+    {"gcs_path": "pk-docs/pie-network-graph/PROJECT_KNOWLEDGE.md", "source": "pie-network-graph/PROJECT_KNOWLEDGE.md", "project": "PIENetworkGraph"},
+]
+
+GCS_PK_BUCKET = "corey-handoff-bridge"
+
 # Beekes PDF filename (bundled in Docker image)
 BEEKES_PDF = "698401131-Beekes-Etymological-Dictionary-Greek-1.pdf"
 
@@ -77,6 +85,31 @@ async def ingest_portfolio() -> dict:
         all_chunks.extend(chunks)
         file_stats.append({"file": source_file, "chunks": len(chunks)})
         logger.info(f"Chunked {source_file}: {len(chunks)} chunks")
+
+    # Fetch non-GitHub PK files from GCS
+    try:
+        from google.cloud import storage as gcs_storage
+        gcs_client = gcs_storage.Client()
+        bucket = gcs_client.bucket(GCS_PK_BUCKET)
+        for gcs_file in GCS_PORTFOLIO_FILES:
+            try:
+                blob = bucket.blob(gcs_file["gcs_path"])
+                if not blob.exists():
+                    logger.warning(f"GCS file not found: gs://{GCS_PK_BUCKET}/{gcs_file['gcs_path']}")
+                    file_stats.append({"file": gcs_file["source"], "chunks": 0, "error": "not found in GCS"})
+                    continue
+                content = blob.download_as_text(encoding="utf-8")
+                chunks = chunk_markdown(content, gcs_file["source"], gcs_file["project"])
+                for chunk in chunks:
+                    chunk["metadata"]["ingested_at"] = ingested_at
+                all_chunks.extend(chunks)
+                file_stats.append({"file": gcs_file["source"], "chunks": len(chunks)})
+                logger.info(f"GCS chunked {gcs_file['source']}: {len(chunks)} chunks")
+            except Exception as e:
+                logger.error(f"Failed to fetch GCS file {gcs_file['source']}: {e}")
+                file_stats.append({"file": gcs_file["source"], "chunks": 0, "error": str(e)})
+    except ImportError:
+        logger.warning("google-cloud-storage not available, skipping GCS PK files")
 
     if not all_chunks:
         return {"chunks": 0, "files": file_stats}
