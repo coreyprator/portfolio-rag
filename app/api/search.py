@@ -134,9 +134,9 @@ SEARCH_HTML = """<!DOCTYPE html>
           <span class="source-desc">American Heritage Dict. of IE Roots (1985)</span>
         </div>
         <div class="checkbox-row">
-          <input type="checkbox" id="src-devaan" disabled>
-          <label for="src-devaan" class="disabled">de Vaan</label>
-          <span class="source-desc" style="opacity:0.5">Latin Dictionary (coming soon)</span>
+          <input type="checkbox" id="src-devaan">
+          <label for="src-devaan">de Vaan</label>
+          <span class="source-desc">Etymological Dictionary of Latin (2008)</span>
         </div>
       </div>
       <div class="filter-group">
@@ -185,6 +185,7 @@ const searchBtn = document.getElementById('searchBtn');
 const BEEKES_FILE = '698401131-Beekes-Etymological-Dictionary-Greek-1.pdf';
 const KROONEN_FILE = 'Etymological Dictionary of Proto-Germanic.pdf';
 const WATKINS_FILE = 'Watkins - American Heritage Dictionary of Indo-European Roots (1985).epub';
+const DEVAAN_FILE = 'de Vaan - Etymological Dictionary of Latin (2008).pdf';
 
 qEl.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 
@@ -208,14 +209,15 @@ async function doSearch() {
   const beekesChecked = document.getElementById('src-beekes').checked;
   const kroonenChecked = document.getElementById('src-kroonen').checked;
   const watkinsChecked = document.getElementById('src-watkins').checked;
+  const devaanChecked = document.getElementById('src-devaan').checked;
   const dccChecked = document.getElementById('src-dcc').checked;
   const portfolioChecked = document.getElementById('src-portfolio').checked;
   const codeChecked = document.getElementById('src-code').checked;
   const jazzChecked = document.getElementById('src-jazz').checked;
   const metapmChecked = document.getElementById('src-metapm').checked;
 
-  const anyChecked = beekesChecked || kroonenChecked || watkinsChecked || dccChecked ||
-                     portfolioChecked || codeChecked || jazzChecked || metapmChecked;
+  const anyChecked = beekesChecked || kroonenChecked || watkinsChecked || devaanChecked ||
+                     dccChecked || portfolioChecked || codeChecked || jazzChecked || metapmChecked;
   if (!anyChecked) { statusEl.textContent = 'Select at least one source.'; return; }
 
   searchBtn.disabled = true;
@@ -227,11 +229,12 @@ async function doSearch() {
     const promises = [];
 
     // Etymology sources — same collection, filtered by source file
-    if (beekesChecked || kroonenChecked || watkinsChecked) {
+    if (beekesChecked || kroonenChecked || watkinsChecked || devaanChecked) {
       const sources = [];
       if (beekesChecked) sources.push(BEEKES_FILE);
       if (kroonenChecked) sources.push(KROONEN_FILE);
       if (watkinsChecked) sources.push(WATKINS_FILE);
+      if (devaanChecked) sources.push(DEVAAN_FILE);
       promises.push(fetchSemantic(q, 'etymology', n, sources.join(',')));
     }
 
@@ -253,6 +256,7 @@ async function doSearch() {
     if (beekesChecked) checkedNames.push('Beekes');
     if (kroonenChecked) checkedNames.push('Kroonen');
     if (watkinsChecked) checkedNames.push('Watkins');
+    if (devaanChecked) checkedNames.push('de Vaan');
     if (dccChecked) checkedNames.push('DCC');
     if (portfolioChecked) checkedNames.push('Portfolio');
     if (codeChecked) checkedNames.push('Code');
@@ -313,6 +317,7 @@ function shortSource(s) {
   if (s.includes('Beekes')) return 'Beekes';
   if (s.includes('Proto-Germanic') || s.includes('Kroonen')) return 'Kroonen';
   if (s.includes('Watkins')) return 'Watkins';
+  if (s.includes('de Vaan') || s.includes('devaan') || s.includes('de-vaan')) return 'de Vaan';
   if (s.includes('dcc.')) return 'DCC';
   const parts = s.split('/');
   return parts[parts.length - 1] || s;
