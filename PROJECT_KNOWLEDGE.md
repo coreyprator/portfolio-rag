@@ -4,11 +4,36 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-14 (PR-MCP-HEADER-001, v2.7.1)
+### Latest Session Update -- 2026-03-20 (PR-DE-VAAN-001, v2.7.6)
+
+- **Sprint**: PR-DE-VAAN-001 — de Vaan Latin Dictionary PDF ingested into etymology collection
+- **Current Version**: v2.7.6
+- **Etymology collection**: 4906 → 6199 chunks (+1293 net, 1433 ingested)
+- **New source**: `de-vaan` — de Vaan Etymological Dictionary of Latin (2008)
+- **source_file**: `de Vaan - Etymological Dictionary of Latin (2008).pdf`
+- **Parser**: `scripts/parse_devaan.py` — extracts 1433 Latin headword entries from 837-page PDF
+- **Ingestor**: `scripts/ingest_devaan.py` — batch POSTs to /ingest/custom, replace_collection=False
+- **Chunk format**: id=`devaan::NNNN::headword_slug`, metadata: source=de-vaan, source_file, headword, language=Latin, year=2008
+- **Search UI**: de Vaan checkbox enabled (was "coming soon" disabled). DEVAAN_FILE constant wired into doSearch()
+- **Handoff**: A5DB31FB-8A48-45A3-A817-A9F19815B99C | UAT spec: EBF82812-EF49-4AF9-B271-70E611E8BEF5
+
+### Previous: PR-WATKINS-001 (v2.7.3)
+
+- **Sprint**: PR-WATKINS-001 -- Watkins IE Roots epub ingested into etymology collection
+- **Current Version**: v2.7.3 (data-only, no code deploy)
+- **Etymology collection**: 3931 → 4906 chunks (+975 net, 1015 ingested via /ingest/custom)
+- **New source**: `watkins` — Watkins American Heritage Dictionary of Indo-European Roots (1985)
+- **Parser**: `scripts/parse_watkins.py` — extracts PIE root entries from OCR-scanned epub (pages 30-109)
+- **Ingestor**: `scripts/ingest_watkins.py` — batch POSTs to /ingest/custom, replace_collection=False
+- **Chunk format**: id=`watkins::NNNN::root_slug`, metadata: source=watkins, collection=etymology, root, dictionary
+- **Search UI**: `/search` page updated with source checkboxes (Beekes, DCC, Watkins, Portfolio, Code, Jazz Theory)
+- **`/semantic` endpoint**: `sources` query param for source-level metadata filtering (comma-separated source filenames)
+- **`full_text` field**: added to /semantic response (full chunk text, not truncated)
+- **Handoff**: E63A9BB6-D52D-497C-88B5-C9A1ABE617EA | UAT 5/5 PASS
+
+### Previous: PR-MCP-HEADER-001 (v2.7.1)
 
 - **Sprint**: PR-MCP-HEADER-001 -- remove auth from /mcp endpoint
-- **Current Version**: v2.7.1 -- **DEPLOYED** to Cloud Run
-- **Health**: `{"status":"healthy","version":"2.7.1","collections":{"portfolio":627,"etymology":1835,"code":521,"jazz_theory":17,"dcc":519,"metapm":313}}`
 - **Fix**: Auth check removed from /mcp handler. Claude.ai connector can now connect without API keys or custom headers.
 - **MCP endpoint**: POST /mcp -- public, no auth required. All other endpoints unchanged.
 
@@ -324,10 +349,12 @@ Fields tracked: status, created_at, sent_at, completed_at, handoff_id, uat_id, v
 - Metadata: source_file, section, project, ingested_at
 - Auto-ingested on cold start + daily via Cloud Scheduler
 
-### Etymology Collection (1835 chunks)
-- Beekes Etymological Dictionary of Greek (1853 pages)
-- Chunked by page, metadata: page_number, entry_headword, source_file, ingested_at
-- Manual trigger only: `POST /ingest/etymology`
+### Etymology Collection (4906 chunks)
+- **Beekes** (1835 chunks): Etymological Dictionary of Greek (1853 pages), chunked by page
+- **Watkins** (1015 chunks): American Heritage Dictionary of IE Roots (1985), chunked by PIE root entry
+- Beekes metadata: page_number, entry_headword, source_file, ingested_at
+- Watkins metadata: source=watkins, root, dictionary, collection=etymology
+- Manual trigger only: `POST /ingest/etymology` (Beekes), `scripts/ingest_watkins.py` (Watkins)
 - EtymoRAG Lab scope absorbed into this project
 
 ### Code Collection (521 files)

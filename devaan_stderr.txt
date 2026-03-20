@@ -1,0 +1,9 @@
+Total pages: 837
+Extracted 770 pages
+Total text: 2,182,332 chars
+Raw matches: 1636
+Parsed 1445 entries
+Generated 1434 chunks
+First: devaan::0000::ab__abs__as___5___af___au | de Vaan Latin Etymology: ab, abs, as-, 5-, af-, au- 'from; off, away' [prep.; prev.] (Elog.Scip., Na
+Last:  devaan::1444::eco_187_aamanaf_f_ed_175 | de Vaan Latin Etymology: eco 187 aamanaf(f)ed 175 ' brateis 271 duni&m 179
+efile 25 363 braviis[ 272
