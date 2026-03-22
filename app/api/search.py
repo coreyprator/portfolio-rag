@@ -15,6 +15,7 @@ SEARCH_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portfolio RAG Search</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230891B2'/><text x='16' y='22' font-size='18' text-anchor='middle' fill='white'>🔍</text></svg>">
 <style>
   :root { --bg: #0b1220; --panel: #111a2d; --text: #e6edf8; --muted: #9aa8c7;
           --line: #26344f; --accent: #4a90d9; --ok: #23a55a; --warn: #e6a817; }
