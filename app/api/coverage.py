@@ -101,13 +101,23 @@ async def coverage_debug():
         "DB_DRIVER": settings.DB_DRIVER,
         "DB_PASSWORD_SET": bool(settings.DB_PASSWORD),
         "DB_PASSWORD_LEN": len(settings.DB_PASSWORD) if settings.DB_PASSWORD else 0,
+        "K_SERVICE": os.getenv("K_SERVICE"),
     }
     try:
-        import pyodbc
-        info["pyodbc_version"] = pyodbc.version
-        info["odbc_drivers"] = pyodbc.drivers()
+        from app.core.database import _is_cloud_run
+        info["is_cloud_run"] = _is_cloud_run()
     except Exception as e:
-        info["pyodbc_error"] = str(e)
+        info["is_cloud_run_error"] = str(e)
+    try:
+        import pytds
+        info["pytds_version"] = pytds.__version__
+    except Exception as e:
+        info["pytds_error"] = str(e)
+    try:
+        from google.cloud.sql.connector import Connector
+        info["cloud_sql_connector"] = "available"
+    except Exception as e:
+        info["cloud_sql_connector_error"] = str(e)
     try:
         from app.core.database import get_connection
         conn = get_connection()
