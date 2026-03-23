@@ -4,7 +4,17 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-23 (PR-019-WIKTIONARY-SEED, v2.7.7)
+### Latest Session Update -- 2026-03-23 (PR020-SOURCE-COUNTS, v2.8.0)
+
+- **Sprint**: PR020-SOURCE-COUNTS — Per-source counts on search page + wiktionary verification
+- **Current Version**: v2.8.0
+- **New endpoint**: `GET /stats` — per-source breakdown for etymology (Beekes 1835, Kroonen 2096, Watkins 975, de Vaan 1293) + totals for all collections
+- **Search UI**: Source count badges next to each checkbox, fetched from `/stats` on page load
+- **Wiktionary**: Added to `VALID_COLLECTIONS` (query.py) and `collection_counts()` (vectorstore.py). Health endpoint now shows wiktionary: 135
+- **Key insight**: Beekes/Kroonen use `source_file` metadata key; Watkins/de-Vaan use `source` metadata key
+- **Handoff**: EB713E69-47C0-4403-85D5-CD8D012A1D6F | UAT spec: 6D7A8020-833B-46A2-9266-FAD1656F5B8C
+
+### Previous: PR-019-WIKTIONARY-SEED (v2.7.7, 2026-03-23)
 
 - **Sprint**: PR-019-WIKTIONARY-SEED — Wiktionary etymology collection (new ChromaDB collection)
 - **Current Version**: v2.7.7 (+ hotfix: wiktionary added to VALID_COLLECTIONS in query.py)
