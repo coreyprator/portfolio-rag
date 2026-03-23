@@ -396,20 +396,107 @@ def run_audit(dry_run: bool = False):
         logger.info(f"  {app}: {s['matches']} matches from {s['words']} words")
     logger.info("=" * 60)
 
+    # Export coverage summary to GCS for the /api/coverage endpoint
     if not dry_run and conn:
+        export_coverage_to_gcs(conn)
         conn.close()
 
     client.close()
     return stats
 
 
+# ── GCS export ───────────────────────────────────────────────────────
+
+GCS_BUCKET = "portfolio-rag-backups-57478301787"
+GCS_COVERAGE_KEY = "coverage/latest.json"
+
+
+def export_coverage_to_gcs(conn=None):
+    """Export coverage summary from SQL to GCS as JSON."""
+    if conn is None:
+        conn = get_connection()
+        close_conn = True
+    else:
+        close_conn = False
+
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT app_source, COUNT(DISTINCT word) AS unique_words, COUNT(*) AS total_links
+        FROM word_dictionary_links GROUP BY app_source ORDER BY app_source
+    """)
+    app_summary = [
+        {"app": row[0], "unique_words": row[1], "total_links": row[2]}
+        for row in cursor.fetchall()
+    ]
+
+    cursor.execute("""
+        SELECT app_source, language, dictionary,
+               COUNT(DISTINCT word) AS matched_words, AVG(match_score) AS avg_score
+        FROM word_dictionary_links
+        GROUP BY app_source, language, dictionary
+        ORDER BY app_source, language, dictionary
+    """)
+    matrix_rows = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT app_source, language, COUNT(DISTINCT word) AS total_words
+        FROM word_dictionary_links GROUP BY app_source, language
+    """)
+    totals = {(r[0], r[1]): r[2] for r in cursor.fetchall()}
+
+    coverage = {}
+    for row in matrix_rows:
+        app, lang, dictionary, matched, avg_score = row
+        coverage.setdefault(app, {})
+        if lang not in coverage[app]:
+            coverage[app][lang] = {"total_words": totals.get((app, lang), 0), "dictionaries": {}}
+        total = totals.get((app, lang), 1)
+        pct = round(matched / total * 100, 1) if total > 0 else 0
+        coverage[app][lang]["dictionaries"][dictionary] = {
+            "matched": matched, "total": total, "coverage_pct": pct,
+            "avg_score": round(float(avg_score), 3) if avg_score else None,
+        }
+
+    cursor.execute("SELECT COUNT(*) FROM word_dictionary_links")
+    total_links = cursor.fetchone()[0]
+
+    data = {"total_links": total_links, "apps": app_summary, "coverage": coverage}
+
+    # Upload to GCS
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        bucket = client.bucket(GCS_BUCKET)
+        blob = bucket.blob(GCS_COVERAGE_KEY)
+        blob.upload_from_string(json.dumps(data, indent=2), content_type="application/json")
+        logger.info(f"Coverage exported to gs://{GCS_BUCKET}/{GCS_COVERAGE_KEY} ({total_links} links)")
+    except Exception as e:
+        logger.error(f"GCS export failed: {e}")
+        # Also save locally as fallback
+        with open("coverage_latest.json", "w") as f:
+            json.dump(data, f, indent=2)
+        logger.info("Saved to coverage_latest.json (local fallback)")
+
+    if close_conn:
+        conn.close()
+
+    return data
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Dictionary Coverage Audit")
     parser.add_argument("--dry-run", action="store_true", help="Query RAG but don't write to DB")
+    parser.add_argument("--export-only", action="store_true", help="Only export current SQL data to GCS")
     args = parser.parse_args()
 
-    if not DB_PASSWORD and not args.dry_run:
-        logger.error("DB_PASSWORD not set. Use --dry-run or set DB_PASSWORD env var.")
-        sys.exit(1)
-
-    run_audit(dry_run=args.dry_run)
+    if args.export_only:
+        if not DB_PASSWORD:
+            logger.error("DB_PASSWORD not set.")
+            sys.exit(1)
+        export_coverage_to_gcs()
+    else:
+        if not DB_PASSWORD and not args.dry_run:
+            logger.error("DB_PASSWORD not set. Use --dry-run or set DB_PASSWORD env var.")
+            sys.exit(1)
+        run_audit(dry_run=args.dry_run)

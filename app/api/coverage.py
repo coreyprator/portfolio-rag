@@ -2,8 +2,12 @@
 
 GET /api/coverage — returns coverage matrix showing which dictionaries
 cover words from each app (Super Flashcards, Etymython, EFG).
+
+Data source: GCS JSON file (gs://portfolio-rag-backups-57478301787/coverage/latest.json)
+uploaded by the audit script. Falls back to SQL if GCS unavailable.
 """
 
+import json
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
@@ -13,129 +17,117 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+GCS_BUCKET = "portfolio-rag-backups-57478301787"
+GCS_COVERAGE_KEY = "coverage/latest.json"
+
+# In-memory cache (refreshed on each cold start or explicit reload)
+_coverage_cache: dict | None = None
+
+
+def _load_from_gcs() -> dict | None:
+    """Load coverage data from GCS."""
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        bucket = client.bucket(GCS_BUCKET)
+        blob = bucket.blob(GCS_COVERAGE_KEY)
+        if not blob.exists():
+            logger.info("No coverage data in GCS yet")
+            return None
+        data = json.loads(blob.download_as_text())
+        logger.info(f"Loaded coverage from GCS: {data.get('total_links', 0)} links")
+        return data
+    except Exception as e:
+        logger.warning(f"GCS coverage load failed: {e}")
+        return None
+
+
+def _load_from_sql() -> dict | None:
+    """Load coverage data from SQL Server (fallback)."""
+    try:
+        from app.core.database import get_db
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT app_source, COUNT(DISTINCT word) AS unique_words, COUNT(*) AS total_links
+                FROM word_dictionary_links GROUP BY app_source ORDER BY app_source
+            """)
+            app_summary = [
+                {"app": row[0], "unique_words": row[1], "total_links": row[2]}
+                for row in cursor.fetchall()
+            ]
+
+            cursor.execute("""
+                SELECT app_source, language, dictionary,
+                       COUNT(DISTINCT word) AS matched_words, AVG(match_score) AS avg_score
+                FROM word_dictionary_links
+                GROUP BY app_source, language, dictionary
+                ORDER BY app_source, language, dictionary
+            """)
+            matrix_rows = cursor.fetchall()
+
+            cursor.execute("""
+                SELECT app_source, language, COUNT(DISTINCT word) AS total_words
+                FROM word_dictionary_links GROUP BY app_source, language
+            """)
+            totals = {(r[0], r[1]): r[2] for r in cursor.fetchall()}
+
+            coverage = {}
+            for row in matrix_rows:
+                app, lang, dictionary, matched, avg_score = row
+                coverage.setdefault(app, {})
+                if lang not in coverage[app]:
+                    coverage[app][lang] = {"total_words": totals.get((app, lang), 0), "dictionaries": {}}
+                total = totals.get((app, lang), 1)
+                pct = round(matched / total * 100, 1) if total > 0 else 0
+                coverage[app][lang]["dictionaries"][dictionary] = {
+                    "matched": matched, "total": total, "coverage_pct": pct,
+                    "avg_score": round(avg_score, 3) if avg_score else None,
+                }
+
+            cursor.execute("SELECT COUNT(*) FROM word_dictionary_links")
+            total_links = cursor.fetchone()[0]
+
+            return {"total_links": total_links, "apps": app_summary, "coverage": coverage}
+    except Exception as e:
+        logger.warning(f"SQL coverage load failed: {e}")
+        return None
+
 
 def _get_coverage_data() -> dict:
-    """Query word_dictionary_links table for coverage stats."""
-    from app.core.database import get_db
+    """Get coverage data from cache, GCS, or SQL."""
+    global _coverage_cache
+    if _coverage_cache is not None:
+        return _coverage_cache
 
-    with get_db() as conn:
-        cursor = conn.cursor()
+    # Try GCS first
+    data = _load_from_gcs()
+    if data:
+        _coverage_cache = data
+        return data
 
-        # Overall summary by app
-        cursor.execute("""
-            SELECT app_source,
-                   COUNT(DISTINCT word) AS unique_words,
-                   COUNT(*) AS total_links
-            FROM word_dictionary_links
-            GROUP BY app_source
-            ORDER BY app_source
-        """)
-        app_summary = [
-            {"app": row[0], "unique_words": row[1], "total_links": row[2]}
-            for row in cursor.fetchall()
-        ]
+    # Fall back to SQL
+    data = _load_from_sql()
+    if data:
+        _coverage_cache = data
+        return data
 
-        # Coverage matrix: app × language × dictionary
-        cursor.execute("""
-            SELECT app_source, language, dictionary,
-                   COUNT(DISTINCT word) AS matched_words,
-                   AVG(match_score) AS avg_score
-            FROM word_dictionary_links
-            GROUP BY app_source, language, dictionary
-            ORDER BY app_source, language, dictionary
-        """)
-        matrix_rows = cursor.fetchall()
-
-        # Total words per app × language (from distinct words in links table)
-        cursor.execute("""
-            SELECT app_source, language,
-                   COUNT(DISTINCT word) AS total_words
-            FROM word_dictionary_links
-            GROUP BY app_source, language
-            ORDER BY app_source, language
-        """)
-        totals_rows = cursor.fetchall()
-        totals = {}
-        for row in totals_rows:
-            totals[(row[0], row[1])] = row[2]
-
-        # Build nested structure
-        coverage = {}
-        for row in matrix_rows:
-            app, lang, dictionary, matched, avg_score = row
-            if app not in coverage:
-                coverage[app] = {}
-            if lang not in coverage[app]:
-                coverage[app][lang] = {
-                    "total_words": totals.get((app, lang), 0),
-                    "dictionaries": {},
-                }
-            total = totals.get((app, lang), 1)
-            pct = round(matched / total * 100, 1) if total > 0 else 0
-            coverage[app][lang]["dictionaries"][dictionary] = {
-                "matched": matched,
-                "total": total,
-                "coverage_pct": pct,
-                "avg_score": round(avg_score, 3) if avg_score else None,
-            }
-
-        # Total link count
-        cursor.execute("SELECT COUNT(*) FROM word_dictionary_links")
-        total_links = cursor.fetchone()[0]
-
-        return {
-            "total_links": total_links,
-            "apps": app_summary,
-            "coverage": coverage,
-        }
+    return {"total_links": 0, "apps": [], "coverage": {}}
 
 
-@router.get("/api/coverage/debug")
-async def coverage_debug():
-    """Diagnostic endpoint for SQL Server connectivity."""
-    import os
-    info = {
-        "DB_SERVER": settings.DB_SERVER,
-        "DB_NAME": settings.DB_NAME,
-        "DB_USER": settings.DB_USER,
-        "DB_DRIVER": settings.DB_DRIVER,
-        "DB_PASSWORD_SET": bool(settings.DB_PASSWORD),
-        "DB_PASSWORD_LEN": len(settings.DB_PASSWORD) if settings.DB_PASSWORD else 0,
-        "K_SERVICE": os.getenv("K_SERVICE"),
-    }
-    try:
-        from app.core.database import _is_cloud_run
-        info["is_cloud_run"] = _is_cloud_run()
-    except Exception as e:
-        info["is_cloud_run_error"] = str(e)
-    try:
-        import pytds
-        info["pytds_version"] = pytds.__version__
-    except Exception as e:
-        info["pytds_error"] = str(e)
-    try:
-        from google.cloud.sql.connector import Connector
-        info["cloud_sql_connector"] = "available"
-    except Exception as e:
-        info["cloud_sql_connector_error"] = str(e)
-    try:
-        from app.core.database import get_connection
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        cursor.fetchone()
-        conn.close()
-        info["connection"] = "SUCCESS"
-    except Exception as e:
-        info["connection"] = f"FAILED: {e}"
-    return info
+@router.get("/api/coverage/reload")
+async def reload_coverage():
+    """Force reload coverage data from GCS."""
+    global _coverage_cache
+    _coverage_cache = None
+    data = _get_coverage_data()
+    return {"reloaded": True, "total_links": data.get("total_links", 0)}
 
 
 @router.get("/api/coverage")
 async def get_dictionary_coverage():
     """Coverage matrix: app x language x dictionary with match counts and %."""
-    if not settings.DB_PASSWORD:
-        raise HTTPException(503, "Database not configured")
     try:
         return _get_coverage_data()
     except Exception as e:
@@ -169,7 +161,6 @@ COVERAGE_HTML = """<!DOCTYPE html>
   .summary-card h3 { font-size: 0.8rem; color: var(--muted); text-transform: uppercase;
                      letter-spacing: 0.5px; margin-bottom: 6px; }
   .summary-card .val { font-size: 1.6rem; font-weight: 700; color: var(--accent); }
-  .summary-card .sub { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
   .app-section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
                  padding: 20px; margin-bottom: 16px; }
   .app-section h2 { font-size: 1.1rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
@@ -215,7 +206,8 @@ const APP_LABELS = {
 };
 const LANG_LABELS = {
   fr: 'French', el: 'Greek', en: 'English', es: 'Spanish',
-  la: 'Latin', pie: 'PIE', de: 'German', unknown: 'Unknown',
+  la: 'Latin', pie: 'PIE', de: 'German', pt: 'Portuguese',
+  unknown: 'Unknown',
 };
 
 function pctClass(pct) {
@@ -234,7 +226,6 @@ async function loadCoverage() {
 
     let html = '';
 
-    // Summary cards
     const totalWords = data.apps.reduce((s, a) => s + a.unique_words, 0);
     html += '<div class="summary-cards">';
     html += '<div class="summary-card"><h3>Total Links</h3><div class="val">' +
@@ -245,7 +236,6 @@ async function loadCoverage() {
             data.apps.length + '</div></div>';
     html += '</div>';
 
-    // Per-app sections
     const coverage = data.coverage || {};
     for (const [app, langs] of Object.entries(coverage)) {
       const appLabel = APP_LABELS[app] || app;
@@ -268,7 +258,7 @@ async function loadCoverage() {
           html += '<tr><td>' + esc(dictLabel) + '</td>';
           html += '<td>' + stats.matched + ' / ' + stats.total + '</td>';
           html += '<td><span class="pct-bar ' + pctClass(pct) + '" style="width:' + barWidth + 'px"></span> ' + pct + '%</td>';
-          html += '<td>' + (stats.avg_score != null ? stats.avg_score : '—') + '</td></tr>';
+          html += '<td>' + (stats.avg_score != null ? stats.avg_score : '\u2014') + '</td></tr>';
         }
         html += '</table></div>';
       }
