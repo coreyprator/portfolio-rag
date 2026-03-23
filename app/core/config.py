@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    VERSION: str = "2.7.8"
+    VERSION: str = "2.8.0"
     BUILD: str = os.getenv("COMMIT_SHA", os.getenv("BUILD_ID", "unknown"))
 
     GITHUB_TOKEN: str = ""
@@ -24,6 +24,13 @@ class Settings(BaseSettings):
         "Super-Flashcards",
         "etymython",
     ]
+
+    # SQL Server (Cloud SQL) — word_dictionary_links audit table
+    DB_SERVER: str = "35.224.242.223"
+    DB_NAME: str = "MetaPM"
+    DB_USER: str = "sqlserver"
+    DB_PASSWORD: str = ""
+    DB_DRIVER: str = "ODBC Driver 18 for SQL Server"
 
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"

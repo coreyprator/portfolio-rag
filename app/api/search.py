@@ -94,7 +94,7 @@ SEARCH_HTML = """<!DOCTYPE html>
 <body>
 <div class="app">
   <h1>Portfolio RAG Search</h1>
-  <p class="subtitle">Semantic search across portfolio collections</p>
+  <p class="subtitle">Semantic search across portfolio collections &middot; <a href="/api/coverage/report" style="color:var(--accent);text-decoration:none">Dictionary Coverage Report</a></p>
 
   <div class="search-box">
     <div class="query-row">
