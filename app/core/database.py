@@ -1,17 +1,48 @@
-"""SQL Server connection for word_dictionary_links audit table."""
+"""SQL Server connection for word_dictionary_links audit table.
+
+Uses google-cloud-sql-connector + pytds on Cloud Run (auto-detects via
+/cloudsql in DB_SERVER). Falls back to pyodbc for local development.
+"""
 
 import logging
+import os
 from contextlib import contextmanager
-
-import pyodbc
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+_connector = None  # Lazy-initialized Cloud SQL connector
 
-def get_connection() -> pyodbc.Connection:
-    """Create a SQL Server connection with UTF-16LE encoding."""
+
+def _is_cloud_run() -> bool:
+    """Detect Cloud Run environment."""
+    return "/cloudsql" in settings.DB_SERVER or os.getenv("K_SERVICE") is not None
+
+
+def _get_cloud_sql_connection():
+    """Connect via google-cloud-sql-connector + pytds (Cloud Run)."""
+    global _connector
+    if _connector is None:
+        from google.cloud.sql.connector import Connector
+        _connector = Connector()
+
+    instance_connection_name = settings.DB_SERVER.replace("/cloudsql/", "")
+
+    conn = _connector.connect(
+        instance_connection_name,
+        "pytds",
+        user=settings.DB_USER,
+        password=settings.DB_PASSWORD,
+        db=settings.DB_NAME,
+    )
+    return conn
+
+
+def _get_pyodbc_connection():
+    """Connect via pyodbc (local development)."""
+    import pyodbc
+
     server = settings.DB_SERVER
     if "," not in server and ":" not in server and "/" not in server:
         server = f"{server},1433"
@@ -30,6 +61,16 @@ def get_connection() -> pyodbc.Connection:
     conn.setdecoding(pyodbc.SQL_WCHAR, encoding="utf-16-le")
     conn.setencoding(encoding="utf-16-le")
     return conn
+
+
+def get_connection():
+    """Create a SQL Server connection. Auto-selects driver based on environment."""
+    if _is_cloud_run():
+        logger.info("Using Cloud SQL Connector (pytds)")
+        return _get_cloud_sql_connection()
+    else:
+        logger.info("Using pyodbc (local)")
+        return _get_pyodbc_connection()
 
 
 @contextmanager
