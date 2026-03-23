@@ -195,6 +195,17 @@ def fetch_super_flashcards(client: httpx.Client) -> list[dict]:
     """Fetch all cards from Super Flashcards API."""
     words = []
     try:
+        # Fetch language mappings first (UUID → code)
+        lang_resp = client.get(f"{SF_API}/api/languages", timeout=15)
+        lang_map = {}
+        if lang_resp.status_code == 200:
+            langs = lang_resp.json()
+            if isinstance(langs, list):
+                lang_map = {l["id"]: l.get("code", "unknown") for l in langs}
+            else:
+                for l in langs.get("languages", langs.get("data", [])):
+                    lang_map[l["id"]] = l.get("code", "unknown")
+
         resp = client.get(f"{SF_API}/api/flashcards", params={"limit": "2000"}, timeout=30)
         if resp.status_code != 200:
             logger.error(f"SF API returned {resp.status_code}")
@@ -203,23 +214,20 @@ def fetch_super_flashcards(client: httpx.Client) -> list[dict]:
         if isinstance(cards, dict):
             cards = cards.get("cards", cards.get("data", []))
         for card in cards:
-            word = card.get("word") or card.get("front") or card.get("term")
+            word = card.get("word_or_phrase") or card.get("word") or card.get("front")
             if not word:
                 continue
-            lang = card.get("language_code") or card.get("language") or "unknown"
-            if isinstance(lang, dict):
-                lang = lang.get("code", "unknown")
-            # Normalize language codes
-            lang = lang.lower()[:5]
+            # Resolve language from language_id UUID
+            lang_id = card.get("language_id", "")
+            lang = lang_map.get(lang_id, "unknown")
             words.append({
                 "word": word.strip(),
                 "language": lang,
                 "entry_points": ["definition"],
             })
-            # Check for etymology/cognate fields
             if card.get("etymology"):
                 words[-1]["entry_points"].append("etymology")
-            if card.get("cognates") or card.get("related_words"):
+            if card.get("english_cognates") or card.get("related_words"):
                 words[-1]["entry_points"].append("cognate")
         logger.info(f"SF: fetched {len(words)} cards")
     except Exception as e:
@@ -320,7 +328,7 @@ def run_audit(dry_run: bool = False):
         conn = None
         logger.info("DRY RUN — no DB writes")
 
-    client = httpx.Client()
+    client = httpx.Client(follow_redirects=True)
     stats = {"total_queries": 0, "total_matches": 0, "by_app": {}}
 
     # Fetch words from all apps

@@ -90,6 +90,37 @@ def _get_coverage_data() -> dict:
         }
 
 
+@router.get("/api/coverage/debug")
+async def coverage_debug():
+    """Diagnostic endpoint for SQL Server connectivity."""
+    import os
+    info = {
+        "DB_SERVER": settings.DB_SERVER,
+        "DB_NAME": settings.DB_NAME,
+        "DB_USER": settings.DB_USER,
+        "DB_DRIVER": settings.DB_DRIVER,
+        "DB_PASSWORD_SET": bool(settings.DB_PASSWORD),
+        "DB_PASSWORD_LEN": len(settings.DB_PASSWORD) if settings.DB_PASSWORD else 0,
+    }
+    try:
+        import pyodbc
+        info["pyodbc_version"] = pyodbc.version
+        info["odbc_drivers"] = pyodbc.drivers()
+    except Exception as e:
+        info["pyodbc_error"] = str(e)
+    try:
+        from app.core.database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        conn.close()
+        info["connection"] = "SUCCESS"
+    except Exception as e:
+        info["connection"] = f"FAILED: {e}"
+    return info
+
+
 @router.get("/api/coverage")
 async def get_dictionary_coverage():
     """Coverage matrix: app x language x dictionary with match counts and %."""
