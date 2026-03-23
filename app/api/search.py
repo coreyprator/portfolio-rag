@@ -140,6 +140,12 @@ SEARCH_HTML = """<!DOCTYPE html>
           <span class="source-desc">Etymological Dictionary of Latin (2008)</span>
         </div>
       </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="src-wiktionary">
+          <label for="src-wiktionary">Wiktionary</label>
+          <span class="source-desc">Live etymology — FR, EL, ES, EN</span>
+        </div>
+      </div>
       <div class="filter-group">
         <h3>Other Collections</h3>
         <div class="checkbox-row">
@@ -211,6 +217,7 @@ async function doSearch() {
   const kroonenChecked = document.getElementById('src-kroonen').checked;
   const watkinsChecked = document.getElementById('src-watkins').checked;
   const devaanChecked = document.getElementById('src-devaan').checked;
+  const wiktionaryChecked = document.getElementById('src-wiktionary').checked;
   const dccChecked = document.getElementById('src-dcc').checked;
   const portfolioChecked = document.getElementById('src-portfolio').checked;
   const codeChecked = document.getElementById('src-code').checked;
@@ -218,7 +225,8 @@ async function doSearch() {
   const metapmChecked = document.getElementById('src-metapm').checked;
 
   const anyChecked = beekesChecked || kroonenChecked || watkinsChecked || devaanChecked ||
-                     dccChecked || portfolioChecked || codeChecked || jazzChecked || metapmChecked;
+                     wiktionaryChecked || dccChecked || portfolioChecked || codeChecked ||
+                     jazzChecked || metapmChecked;
   if (!anyChecked) { statusEl.textContent = 'Select at least one source.'; return; }
 
   searchBtn.disabled = true;
@@ -239,6 +247,9 @@ async function doSearch() {
       promises.push(fetchSemantic(q, 'etymology', n, sources.join(',')));
     }
 
+    // Wiktionary — own collection
+    if (wiktionaryChecked) promises.push(fetchSemantic(q, 'wiktionary', n, null));
+
     // Other collections — no source filter needed
     if (dccChecked) promises.push(fetchSemantic(q, 'dcc', n, null));
     if (portfolioChecked) promises.push(fetchSemantic(q, 'portfolio', n, null));
@@ -258,6 +269,7 @@ async function doSearch() {
     if (kroonenChecked) checkedNames.push('Kroonen');
     if (watkinsChecked) checkedNames.push('Watkins');
     if (devaanChecked) checkedNames.push('de Vaan');
+    if (wiktionaryChecked) checkedNames.push('Wiktionary');
     if (dccChecked) checkedNames.push('DCC');
     if (portfolioChecked) checkedNames.push('Portfolio');
     if (codeChecked) checkedNames.push('Code');
@@ -319,6 +331,7 @@ function shortSource(s) {
   if (s.includes('Proto-Germanic') || s.includes('Kroonen')) return 'Kroonen';
   if (s.includes('Watkins')) return 'Watkins';
   if (s.includes('de Vaan') || s.includes('devaan') || s.includes('de-vaan')) return 'de Vaan';
+  if (s === 'wiktionary' || s.includes('wiktionary')) return 'Wiktionary';
   if (s.includes('dcc.')) return 'DCC';
   const parts = s.split('/');
   return parts[parts.length - 1] || s;
