@@ -215,16 +215,17 @@ class VectorStore:
             coll = self.get_or_create_collection("etymology")
             total = coll.count()
             sources_breakdown = {}
-            # Map display name → actual source metadata value
+            # Map display name → (metadata_key, metadata_value)
+            # Beekes/Kroonen use source_file; Watkins/de-Vaan use source
             source_map = {
-                "beekes": "698401131-Beekes-Etymological-Dictionary-Greek-1.pdf",
-                "kroonen": "Etymological Dictionary of Proto-Germanic.pdf",
-                "watkins": "watkins",
-                "de-vaan": "de-vaan",
+                "beekes": ("source_file", "698401131-Beekes-Etymological-Dictionary-Greek-1.pdf"),
+                "kroonen": ("source_file", "Etymological Dictionary of Proto-Germanic.pdf"),
+                "watkins": ("source", "watkins"),
+                "de-vaan": ("source", "de-vaan"),
             }
-            for label, source_val in source_map.items():
+            for label, (meta_key, meta_val) in source_map.items():
                 try:
-                    result = coll.get(where={"source": {"$eq": source_val}}, include=[])
+                    result = coll.get(where={meta_key: {"$eq": meta_val}}, include=[])
                     count = len(result["ids"])
                     if count > 0:
                         sources_breakdown[label] = count
