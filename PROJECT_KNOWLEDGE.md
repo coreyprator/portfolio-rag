@@ -4,7 +4,20 @@ Generated: 2026-02-28 by CC Session
 Updated: 2026-03-08 -- Sprint PR-MS4-MS1 Jazz Theory + Scheduler (v2.3.0)
 Purpose: Canonical reference for all AI sessions working on this project.
 
-### Latest Session Update -- 2026-03-20 (PR-DE-VAAN-001, v2.7.6)
+### Latest Session Update -- 2026-03-23 (PR-019-WIKTIONARY-SEED, v2.7.7)
+
+- **Sprint**: PR-019-WIKTIONARY-SEED — Wiktionary etymology collection (new ChromaDB collection)
+- **Current Version**: v2.7.7 (+ hotfix: wiktionary added to VALID_COLLECTIONS in query.py)
+- **New collection**: `wiktionary` — 135 chunks across EN/FR/ES/Ancient Greek
+- **Languages**: English (~80 words), French (~38), Spanish (~38), Ancient Greek (~18)
+- **Content**: PIE root data, etymology chains, cognates via Wiktionary MediaWiki API
+- **Fetch script**: `scripts/fetch_wiktionary.py` — queries `en.wiktionary.org/w/api.php`, parses wikitext for etymology sections and `{{root|lang|ine-pro|*root}}` templates
+- **Chunk format**: id=`wiktionary::{lang_code}::{slug}`, metadata: source=wiktionary, word, language, language_code, category, pie_root
+- **Key files changed**: `app/api/ingest.py` (ALLOWED_CUSTOM_COLLECTIONS), `app/api/query.py` (VALID_COLLECTIONS), `app/api/search.py` (Wiktionary checkbox in UI)
+- **Search UI**: Wiktionary checkbox between de Vaan and Other Collections group — own collection (not etymology filter)
+- **Handoff**: EB8996C2-61F9-497C-A527-8D3B5FCB74E5 | UAT spec: 6FFC140B-9CCA-4715-AB6C-DA51AADD018D
+
+### Previous: PR-DE-VAAN-001 (v2.7.6, 2026-03-20)
 
 - **Sprint**: PR-DE-VAAN-001 — de Vaan Latin Dictionary PDF ingested into etymology collection
 - **Current Version**: v2.7.6
