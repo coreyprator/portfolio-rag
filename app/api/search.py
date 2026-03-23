@@ -53,6 +53,7 @@ SEARCH_HTML = """<!DOCTYPE html>
   .checkbox-row label { margin-bottom: 0; font-size: 0.88rem; color: var(--text); cursor: pointer; }
   .checkbox-row label.disabled { color: var(--muted); opacity: 0.5; }
   .checkbox-row .source-desc { font-size: 0.75rem; color: var(--muted); margin-left: 4px; }
+  .source-count { font-size: 0.7rem; color: var(--ok); margin-left: auto; white-space: nowrap; }
 
   .status { color: var(--muted); font-size: 0.85rem; margin-top: 12px; }
   .error { color: #e74c3c; }
@@ -123,27 +124,31 @@ SEARCH_HTML = """<!DOCTYPE html>
           <input type="checkbox" id="src-beekes" checked>
           <label for="src-beekes">Beekes</label>
           <span class="source-desc">Greek Etymological Dictionary</span>
+          <span class="source-count" id="count-beekes"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-kroonen">
           <label for="src-kroonen">Kroonen</label>
           <span class="source-desc">Proto-Germanic Dictionary</span>
+          <span class="source-count" id="count-kroonen"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-watkins">
           <label for="src-watkins">Watkins</label>
           <span class="source-desc">American Heritage Dict. of IE Roots (1985)</span>
+          <span class="source-count" id="count-watkins"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-devaan">
           <label for="src-devaan">de Vaan</label>
           <span class="source-desc">Etymological Dictionary of Latin (2008)</span>
+          <span class="source-count" id="count-de-vaan"></span>
         </div>
-      </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-wiktionary">
           <label for="src-wiktionary">Wiktionary</label>
-          <span class="source-desc">Live etymology — FR, EL, ES, EN</span>
+          <span class="source-desc">Live etymology &mdash; FR, EL, ES, EN</span>
+          <span class="source-count" id="count-wiktionary"></span>
         </div>
       </div>
       <div class="filter-group">
@@ -152,26 +157,31 @@ SEARCH_HTML = """<!DOCTYPE html>
           <input type="checkbox" id="src-dcc" checked>
           <label for="src-dcc">DCC</label>
           <span class="source-desc">Greek Core List</span>
+          <span class="source-count" id="count-dcc"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-portfolio">
           <label for="src-portfolio">Portfolio</label>
           <span class="source-desc">Project knowledge</span>
+          <span class="source-count" id="count-portfolio"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-code">
           <label for="src-code">Code</label>
           <span class="source-desc">Source files</span>
+          <span class="source-count" id="count-code"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-jazz">
           <label for="src-jazz">Jazz Theory</label>
           <span class="source-desc">Riff library seeds</span>
+          <span class="source-count" id="count-jazz_theory"></span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="src-metapm">
           <label for="src-metapm">MetaPM</label>
           <span class="source-desc">Requirements &amp; sprints</span>
+          <span class="source-count" id="count-metapm"></span>
         </div>
       </div>
     </div>
@@ -359,6 +369,26 @@ function esc(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+// Fetch per-source counts on page load
+fetch('/stats').then(r => r.json()).then(stats => {
+  // Etymology sources
+  const etymSources = stats.etymology?.sources || {};
+  Object.entries(etymSources).forEach(([src, count]) => {
+    const el = document.getElementById('count-' + src);
+    if (el) el.textContent = count.toLocaleString();
+  });
+  // Wiktionary (own collection)
+  const wkCount = stats.wiktionary?.total;
+  const wkEl = document.getElementById('count-wiktionary');
+  if (wkEl && wkCount > 0) wkEl.textContent = wkCount.toLocaleString();
+  // Other collections
+  ['dcc','portfolio','code','jazz_theory','metapm'].forEach(c => {
+    const el = document.getElementById('count-' + c);
+    const val = stats[c]?.total;
+    if (el && val > 0) el.textContent = val.toLocaleString();
+  });
+}).catch(() => {});
 </script>
 </body>
 </html>"""

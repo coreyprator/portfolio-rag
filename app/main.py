@@ -152,6 +152,14 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+@app.get("/stats")
+async def collection_stats():
+    """Per-source counts for etymology collection; totals for all others."""
+    if not _ready:
+        raise HTTPException(status_code=503, detail="Starting up")
+    return vector_store.collection_stats()
+
+
 # Health check — returns 503 until startup completes (gates Cloud Run HTTP probe)
 @app.get("/health")
 @app.head("/health")
@@ -178,6 +186,7 @@ async def root():
         "docs": "/docs",
         "endpoints": [
             "GET /health",
+            "GET /stats",
             "GET /documents?repo=&doc_type=&has_checkpoint=&extension=&path_contains=",
             "GET /latest/all",
             "GET /latest/{doc_type}?repo=",

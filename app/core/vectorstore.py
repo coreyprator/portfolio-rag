@@ -198,13 +198,44 @@ class VectorStore:
 
     def collection_counts(self) -> dict:
         counts = {}
-        for name in ["portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm"]:
+        for name in ["portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm", "wiktionary"]:
             try:
                 coll = self.get_or_create_collection(name)
                 counts[name] = coll.count()
             except Exception:
                 counts[name] = 0
         return counts
+
+    def collection_stats(self) -> dict:
+        """Per-source breakdown for etymology; totals for other collections."""
+        stats = {}
+
+        # Etymology — break down by source metadata
+        try:
+            coll = self.get_or_create_collection("etymology")
+            total = coll.count()
+            sources_breakdown = {}
+            for source in ["beekes", "kroonen", "watkins", "de-vaan"]:
+                try:
+                    result = coll.get(where={"source": {"$eq": source}}, include=[])
+                    count = len(result["ids"])
+                    if count > 0:
+                        sources_breakdown[source] = count
+                except Exception:
+                    pass
+            stats["etymology"] = {"total": total, "sources": sources_breakdown}
+        except Exception:
+            stats["etymology"] = {"total": 0, "sources": {}}
+
+        # Other collections — just totals
+        for name in ["portfolio", "code", "jazz_theory", "dcc", "metapm", "wiktionary"]:
+            try:
+                coll = self.get_or_create_collection(name)
+                stats[name] = {"total": coll.count()}
+            except Exception:
+                stats[name] = {"total": 0}
+
+        return stats
 
 
 vector_store = VectorStore()
