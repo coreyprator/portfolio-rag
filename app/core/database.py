@@ -23,6 +23,7 @@ def get_connection() -> pyodbc.Connection:
         f"UID={settings.DB_USER};"
         f"PWD={settings.DB_PASSWORD};"
         "TrustServerCertificate=yes;"
+        "Encrypt=Optional;"
     )
 
     conn = pyodbc.connect(conn_str, timeout=30)
