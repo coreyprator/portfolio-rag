@@ -361,7 +361,11 @@ def build_chunk(word: str, lang_section: str, lang_code: str, lang_display: str,
     if len(content) > 1800:
         content = content[:1797] + "..."
 
-    slug = re.sub(r"[^a-z0-9]", "_", word.lower()).strip("_") or "word"
+    ascii_slug = re.sub(r"[^a-z0-9]", "_", word.lower()).strip("_")
+    # For non-ASCII words (Greek etc.), use hex codepoints of first 4 chars
+    if not ascii_slug:
+        ascii_slug = "".join(f"{ord(c):04x}" for c in word[:4])
+    slug = ascii_slug
     chunk_id = f"wiktionary::{lang_code}::{slug}"
 
     return {
@@ -417,7 +421,9 @@ def main():
         print(f"First: {chunks[0]['id']}", file=sys.stderr)
         print(f"Last:  {chunks[-1]['id']}", file=sys.stderr)
 
-    json.dump(chunks, sys.stdout, indent=2, ensure_ascii=False)
+    # Write UTF-8 explicitly (Windows stdout defaults to cp1252)
+    out = json.dumps(chunks, indent=2, ensure_ascii=False)
+    sys.stdout.buffer.write(out.encode("utf-8"))
 
 
 if __name__ == "__main__":
