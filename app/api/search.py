@@ -1,11 +1,16 @@
 """Browser-based search interface for Portfolio RAG.
 
-Serves a self-contained HTML page at /search that calls the /semantic
-endpoint via client-side fetch(). No auth required.
+Serves a self-contained HTML page at /search/etymology (etymology-only).
+/search redirects (301) to /search/etymology.
+GET /search/etymology?q=... with a query param returns JSON semantic results.
 """
 
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from typing import Optional
+
+from fastapi import APIRouter, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from app.core.vectorstore import vector_store
 
 router = APIRouter()
 
@@ -14,7 +19,7 @@ SEARCH_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portfolio RAG Search</title>
+<title>Etymology Search — Portfolio RAG v3</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230891B2'/><text x='16' y='22' font-size='18' text-anchor='middle' fill='white'>🔍</text></svg>">
 <style>
   :root { --bg: #0b1220; --panel: #111a2d; --text: #e6edf8; --muted: #9aa8c7;
@@ -93,8 +98,8 @@ SEARCH_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="app">
-  <h1>Portfolio RAG Search</h1>
-  <p class="subtitle">Semantic search across portfolio collections &middot; <a href="/api/coverage/report" style="color:var(--accent);text-decoration:none">Dictionary Coverage Report</a></p>
+  <h1>Etymology Search</h1>
+  <p class="subtitle">PIE root dictionaries &middot; Beekes / Kroonen / de Vaan / Watkins / DCC / Wiktionary &middot; <a href="/api/coverage/report" style="color:var(--accent);text-decoration:none">Coverage Report</a></p>
 
   <div class="search-box">
     <div class="query-row">
@@ -159,30 +164,6 @@ SEARCH_HTML = """<!DOCTYPE html>
           <span class="source-desc">Greek Core List</span>
           <span class="source-count" id="count-dcc"></span>
         </div>
-        <div class="checkbox-row">
-          <input type="checkbox" id="src-portfolio">
-          <label for="src-portfolio">Portfolio</label>
-          <span class="source-desc">Project knowledge</span>
-          <span class="source-count" id="count-portfolio"></span>
-        </div>
-        <div class="checkbox-row">
-          <input type="checkbox" id="src-code">
-          <label for="src-code">Code</label>
-          <span class="source-desc">Source files</span>
-          <span class="source-count" id="count-code"></span>
-        </div>
-        <div class="checkbox-row">
-          <input type="checkbox" id="src-jazz">
-          <label for="src-jazz">Jazz Theory</label>
-          <span class="source-desc">Riff library seeds</span>
-          <span class="source-count" id="count-jazz_theory"></span>
-        </div>
-        <div class="checkbox-row">
-          <input type="checkbox" id="src-metapm">
-          <label for="src-metapm">MetaPM</label>
-          <span class="source-desc">Requirements &amp; sprints</span>
-          <span class="source-count" id="count-metapm"></span>
-        </div>
       </div>
     </div>
 
@@ -229,14 +210,9 @@ async function doSearch() {
   const devaanChecked = document.getElementById('src-devaan').checked;
   const wiktionaryChecked = document.getElementById('src-wiktionary').checked;
   const dccChecked = document.getElementById('src-dcc').checked;
-  const portfolioChecked = document.getElementById('src-portfolio').checked;
-  const codeChecked = document.getElementById('src-code').checked;
-  const jazzChecked = document.getElementById('src-jazz').checked;
-  const metapmChecked = document.getElementById('src-metapm').checked;
 
   const anyChecked = beekesChecked || kroonenChecked || watkinsChecked || devaanChecked ||
-                     wiktionaryChecked || dccChecked || portfolioChecked || codeChecked ||
-                     jazzChecked || metapmChecked;
+                     wiktionaryChecked || dccChecked;
   if (!anyChecked) { statusEl.textContent = 'Select at least one source.'; return; }
 
   searchBtn.disabled = true;
@@ -262,10 +238,6 @@ async function doSearch() {
 
     // Other collections — no source filter needed
     if (dccChecked) promises.push(fetchSemantic(q, 'dcc', n, null));
-    if (portfolioChecked) promises.push(fetchSemantic(q, 'portfolio', n, null));
-    if (codeChecked) promises.push(fetchSemantic(q, 'code', n, null));
-    if (jazzChecked) promises.push(fetchSemantic(q, 'jazz_theory', n, null));
-    if (metapmChecked) promises.push(fetchSemantic(q, 'metapm', n, null));
 
     const arrays = await Promise.all(promises);
     const allResults = arrays.flat();
@@ -281,10 +253,6 @@ async function doSearch() {
     if (devaanChecked) checkedNames.push('de Vaan');
     if (wiktionaryChecked) checkedNames.push('Wiktionary');
     if (dccChecked) checkedNames.push('DCC');
-    if (portfolioChecked) checkedNames.push('Portfolio');
-    if (codeChecked) checkedNames.push('Code');
-    if (jazzChecked) checkedNames.push('Jazz');
-    if (metapmChecked) checkedNames.push('MetaPM');
 
     statusEl.textContent = trimmed.length + ' result' + (trimmed.length !== 1 ? 's' : '') +
       ' for "' + q + '" across ' + checkedNames.join(', ');
@@ -383,7 +351,7 @@ fetch('/stats').then(r => r.json()).then(stats => {
   const wkEl = document.getElementById('count-wiktionary');
   if (wkEl && wkCount > 0) wkEl.textContent = wkCount.toLocaleString();
   // Other collections
-  ['dcc','portfolio','code','jazz_theory','metapm'].forEach(c => {
+  ['dcc'].forEach(c => {
     const el = document.getElementById('count-' + c);
     const val = stats[c]?.total;
     if (el && val > 0) el.textContent = val.toLocaleString();
@@ -394,7 +362,38 @@ fetch('/stats').then(r => r.json()).then(stats => {
 </html>"""
 
 
-@router.get("/search", response_class=HTMLResponse)
-async def search_page():
-    """Browser-based search interface. No auth required."""
-    return SEARCH_HTML
+@router.get("/search", include_in_schema=False)
+async def search_redirect():
+    """Deprecated. Redirects to /search/etymology."""
+    return RedirectResponse(url="/search/etymology", status_code=301)
+
+
+@router.get("/search/etymology")
+async def search_etymology(q: Optional[str] = None, collection: Optional[str] = None, n: int = 5):
+    """Etymology semantic search.
+    With ?q=: returns JSON results from etymology/dcc/wiktionary collections.
+    Without ?q=: returns the browser search UI (HTML).
+    """
+    if q:
+        # JSON semantic search over etymology collections
+        ETYMOLOGY_VALID = {"etymology", "dcc", "wiktionary"}
+        effective_collection = collection if collection in ETYMOLOGY_VALID else "etymology"
+        n = min(max(n, 1), 20)
+        results = vector_store.query(q, collection=effective_collection, max_results=n)
+        formatted = []
+        for r in results:
+            meta = r.get("metadata", {})
+            full_text = r.get("text", "")
+            formatted.append({
+                "score": r.get("score"),
+                "snippet": full_text[:500],
+                "full_text": full_text,
+                "source": meta.get("source_file") or meta.get("path", ""),
+                "page": meta.get("page_number"),
+                "section": meta.get("section") or meta.get("entry_headword", ""),
+                "collection": r.get("collection"),
+            })
+        return {"query": q, "collection": effective_collection, "total": len(formatted), "results": formatted}
+    # No query — serve browser UI
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=SEARCH_HTML)

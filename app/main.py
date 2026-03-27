@@ -55,48 +55,23 @@ async def _startup_chromadb():
     logger.info("Initializing ChromaDB vector store...")
     vector_store.initialize(restored_from_gcs=restored)
 
+    # v3.0: Remove non-etymology collections (portfolio, code, jazz_theory, metapm)
+    deprecated = ["portfolio", "code", "jazz_theory", "metapm"]
+    for coll_name in deprecated:
+        try:
+            vector_store.delete_collection(coll_name)
+            logger.info(f"[v3.0] Deleted deprecated collection: {coll_name}")
+        except Exception as e:
+            logger.info(f"[v3.0] Collection {coll_name} already absent or delete failed (non-fatal): {e}")
+
     counts = vector_store.collection_counts()
     logger.info(f"ChromaDB post-init counts: {counts}")
 
-    if counts.get("portfolio", 0) > 0 and counts.get("etymology", 0) > 0:
-        logger.info("Core collections populated from GCS backup — skipping portfolio ingestion")
-        # Jazz theory might still need ingestion if this is first deploy with it
-        if counts.get("jazz_theory", 0) == 0:
-            logger.info("Jazz theory collection empty — ingesting from seed files...")
-            try:
-                from app.services.ingestion import ingest_jazz_theory
-                jt_result = await ingest_jazz_theory()
-                jt_chunks = jt_result.get("chunks", 0)
-                logger.info(f"Jazz theory ingestion complete: {jt_chunks} chunks")
-                if jt_chunks > 0:
-                    from app.core.vectorstore import backup_to_gcs
-                    backup_to_gcs()
-            except Exception as e:
-                logger.error(f"Jazz theory ingestion failed: {e}")
+    if counts.get("etymology", 0) > 0:
+        logger.info("Etymology collection populated from GCS backup — no ingestion needed")
         return
 
-    if not settings.OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not set. Skipping ChromaDB ingestion.")
-        return
-
-    if counts.get("portfolio", 0) == 0:
-        logger.info("Portfolio collection empty — ingesting from GitHub...")
-        try:
-            result = await ingest_portfolio()
-            chunks = result.get("chunks", 0)
-            logger.info(f"ChromaDB portfolio ingestion complete: {chunks} chunks")
-        except Exception as e:
-            logger.error(f"ChromaDB portfolio ingestion failed: {e}")
-
-    if counts.get("jazz_theory", 0) == 0:
-        logger.info("Jazz theory collection empty — ingesting from seed files...")
-        try:
-            from app.services.ingestion import ingest_jazz_theory
-            jt_result = await ingest_jazz_theory()
-            jt_chunks = jt_result.get("chunks", 0)
-            logger.info(f"Jazz theory ingestion complete: {jt_chunks} chunks")
-        except Exception as e:
-            logger.error(f"Jazz theory ingestion failed: {e}")
+    logger.info("Etymology collection empty — manual re-ingest required (POST /ingest/etymology)")
 
 
 @contextlib.asynccontextmanager
@@ -154,10 +129,25 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.get("/stats")
 async def collection_stats():
-    """Per-source counts for etymology collection; totals for all others."""
+    """Collection stats reflecting v3.0 etymology-only architecture."""
     if not _ready:
         raise HTTPException(status_code=503, detail="Starting up")
-    return vector_store.collection_stats()
+    raw = vector_store.collection_stats()
+    etymology = raw.get("etymology", {})
+    return {
+        "version": settings.VERSION,
+        "purpose": "Etymology research — PIE root dictionaries only",
+        "collections": {
+            "etymology": {
+                "chunks": etymology.get("total", 0),
+                "sources": etymology.get("sources", {}),
+            },
+            "dcc": {"chunks": raw.get("dcc", {}).get("total", 0), "source": "dickinson_core_curriculum"},
+            "wiktionary": {"chunks": raw.get("wiktionary", {}).get("total", 0), "source": "wiktionary_api"},
+        },
+        "deprecated_collections": ["portfolio", "code", "jazz_theory", "metapm"],
+        "migration_note": "Project knowledge moved to MetaPM SQL /api/search/knowledge",
+    }
 
 
 # Health check — returns 503 until startup completes (gates Cloud Run HTTP probe)

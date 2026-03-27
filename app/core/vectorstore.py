@@ -198,7 +198,7 @@ class VectorStore:
 
     def collection_counts(self) -> dict:
         counts = {}
-        for name in ["portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm", "wiktionary"]:
+        for name in ["etymology", "dcc", "wiktionary"]:
             try:
                 coll = self.get_or_create_collection(name)
                 counts[name] = coll.count()
@@ -235,8 +235,8 @@ class VectorStore:
         except Exception:
             stats["etymology"] = {"total": 0, "sources": {}}
 
-        # Other collections — just totals
-        for name in ["portfolio", "code", "jazz_theory", "dcc", "metapm", "wiktionary"]:
+        # Other etymology-related collections — just totals
+        for name in ["dcc", "wiktionary"]:
             try:
                 coll = self.get_or_create_collection(name)
                 stats[name] = {"total": coll.count()}
