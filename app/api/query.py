@@ -25,7 +25,23 @@ async def search_documents(q: str = Query(..., min_length=1), repo: str = None):
     return {"results": results, "total": len(results), "query": q}
 
 
+# MP48 TSK-005: 'code' collection deprecated — SQL code_files table in MetaPM
+# is now authoritative. The 'code' value remains in the allowed set only so the
+# /semantic and /ingest/code endpoints can return a 410 Gone with a useful
+# replacement hint instead of a generic 400.
 VALID_COLLECTIONS = {"portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm", "wiktionary"}
+
+_CODE_DEPRECATION = {
+    "error": "collection_deprecated",
+    "message": (
+        "The 'code' collection is deprecated. Use MetaPM SQL code_files table via "
+        "the execute_sql_query MCP tool, or GET "
+        "https://metapm.rentyourcio.com/api/code-files/status for freshness metadata."
+    ),
+    "replacement": (
+        "execute_sql_query database=MetaPM sql=\"SELECT * FROM code_files WHERE app = ?\""
+    ),
+}
 
 
 @router.get("/semantic")
@@ -38,13 +54,17 @@ async def semantic_search(
     sources: Optional[str] = None,
 ):
     """Semantic (ChromaDB/OpenAI) search.
-    collection: 'portfolio', 'etymology', 'code', or omit for portfolio+etymology.
-    repo: filter code collection by project name (e.g. 'artforge').
-    filetype: filter code collection by file type (e.g. 'route', 'model', 'schema').
+    collection: 'portfolio', 'etymology', 'dcc', 'jazz_theory', 'metapm', 'wiktionary',
+    or omit for portfolio+etymology. 'code' is deprecated (see MetaPM SQL code_files).
+    repo: legacy filter, only meaningful for the deprecated 'code' collection.
+    filetype: legacy filter, only meaningful for the deprecated 'code' collection.
     sources: comma-separated source filenames to filter by (e.g. 'Beekes.pdf,Kroonen.pdf').
     """
+    # MP48 TSK-005: hard-deprecate the code collection
+    if collection == "code":
+        raise HTTPException(status_code=410, detail=_CODE_DEPRECATION)
     if collection and collection not in VALID_COLLECTIONS:
-        raise HTTPException(status_code=400, detail=f"collection must be one of: {', '.join(sorted(VALID_COLLECTIONS))}")
+        raise HTTPException(status_code=400, detail=f"collection must be one of: {', '.join(sorted(VALID_COLLECTIONS - {'code'}))}")
     n = min(max(n, 1), 20)
 
     # Build where clause for code collection filters

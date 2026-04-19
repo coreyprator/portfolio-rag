@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    VERSION: str = "3.0.0"
+    VERSION: str = "3.1.0"  # MP48 TSK-005: hard-deprecate 'code' collection (/semantic & /ingest/code return 410)
     BUILD: str = os.getenv("COMMIT_SHA", os.getenv("BUILD_ID", "unknown"))
 
     GITHUB_TOKEN: str = ""

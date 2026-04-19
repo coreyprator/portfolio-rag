@@ -60,9 +60,29 @@ jobs:
           HEALTH=$(curl -s "$SERVICE_URL/health")
           echo "Health check passed: $HEALTH" >> $GITHUB_STEP_SUMMARY
 
-      - name: Index code to Portfolio RAG
+      # MP48 BUG-090 / TSK-005: Ingest source into MetaPM SQL code_files table.
+      # The RAG `code` collection is deprecated — SQL code_files is authoritative.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ODBC Driver 18 for SQL Server
         run: |
-          curl -s -X POST             https://portfolio-rag-57478301787.us-central1.run.app/ingest/code             -H "x-api-key: ${{ secrets.RAG_API_KEY }}"             -H "Content-Type: application/json"             -d '{"repo": "${{ github.event.repository.name }}", "collection": "code"}'             --max-time 120 || echo "RAG index failed -- non-blocking"
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /tmp/microsoft-prod.gpg
+          sudo mv /tmp/microsoft-prod.gpg /usr/share/keyrings/microsoft-prod.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update -qq
+          sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18
+
+      - name: Ingest source code into MetaPM SQL
+        run: |
+          pip install pyodbc
+          curl -fsSL https://raw.githubusercontent.com/coreyprator/metapm/main/scripts/ingest_code.py -o ingest_code.py
+          python ingest_code.py --app rag --repo-root . --sha $(git rev-parse --short HEAD) || exit 1
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: 35.224.242.223
 
       - name: Deployment Summary
         run: |

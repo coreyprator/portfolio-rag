@@ -10,7 +10,16 @@ logger = logging.getLogger(__name__)
 
 mcp = FastMCP("Portfolio RAG", json_response=True)
 
-VALID_COLLECTIONS = {"portfolio", "etymology", "code", "jazz_theory", "dcc", "metapm"}
+# MP48 TSK-005: 'code' is no longer a valid collection here. Source code is
+# authoritative in MetaPM's SQL code_files table. MCP callers get a deprecation
+# error instead of a silent empty result.
+VALID_COLLECTIONS = {"portfolio", "etymology", "jazz_theory", "dcc", "metapm"}
+
+_CODE_DEPRECATION_MSG = (
+    "The 'code' collection is deprecated. Use MetaPM SQL code_files via the "
+    "execute_sql_query MCP tool (database=MetaPM, sql=\"SELECT * FROM code_files "
+    "WHERE app = ?\"), or GET https://metapm.rentyourcio.com/api/code-files/status."
+)
 
 
 @mcp.tool()
@@ -31,6 +40,8 @@ async def query_portfolio(
     """
     max_results = min(max(max_results, 1), 20)
 
+    if collection == "code":
+        return _CODE_DEPRECATION_MSG
     if collection and collection not in ("portfolio", "etymology"):
         return f"Unknown collection: {collection}. Valid: portfolio, etymology"
 
@@ -57,7 +68,9 @@ async def rag_query(
         query: Natural language search query
         collection: Collection to search. Options: portfolio (methodology/standards),
             metapm (requirements), etymology (Beekes dictionary), dcc (Greek core vocab),
-            code (source code), jazz_theory (jazz harmony)
+            jazz_theory (jazz harmony). For source code, use the MetaPM execute_sql_query
+            MCP tool against the code_files table — the ChromaDB 'code' collection is
+            deprecated (MP48 TSK-005).
         n: Number of results to return (default 5, max 20)
 
     Returns:
@@ -65,6 +78,8 @@ async def rag_query(
     """
     n = min(max(n, 1), 20)
 
+    if collection == "code":
+        return _CODE_DEPRECATION_MSG
     if collection and collection not in VALID_COLLECTIONS:
         return f"Unknown collection: {collection}. Valid: {', '.join(sorted(VALID_COLLECTIONS))}"
 
@@ -94,6 +109,8 @@ async def rag_get_document(
     Returns:
         All chunks from the specified document, ordered by section/page
     """
+    if collection == "code":
+        return _CODE_DEPRECATION_MSG
     if collection and collection not in VALID_COLLECTIONS:
         return f"Unknown collection: {collection}. Valid: {', '.join(sorted(VALID_COLLECTIONS))}"
 

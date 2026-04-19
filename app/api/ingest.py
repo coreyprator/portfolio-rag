@@ -163,95 +163,23 @@ async def ingest_code(
     x_api_key: str | None = Header(None),
     authorization: str | None = Header(None),
 ):
-    """Clone all configured repos and index source files into the 'code' ChromaDB collection."""
-    _require_auth(x_api_key, authorization)
-    start = time.time()
+    """DEPRECATED (MP48 TSK-005). Always returns 410 Gone.
 
-    docs, metadatas, ids = [], [], []
-    repo_stats = []
-    skipped_repos = []
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for repo_cfg in CODE_REPOS:
-            repo_name = repo_cfg["name"]
-            repo_url = f"https://github.com/{repo_cfg['repo']}.git"
-            clone_dir = os.path.join(tmpdir, repo_name)
-
-            result = subprocess.run(
-                ["git", "clone", "--depth=1", repo_url, clone_dir],
-                capture_output=True, text=True, timeout=120
-            )
-            if result.returncode != 0:
-                logger.warning(f"Failed to clone {repo_url}: {result.stderr[:200]}")
-                skipped_repos.append(repo_name)
-                continue
-
-            file_count = 0
-            for root, dirs, files in os.walk(clone_dir):
-                rel_root = os.path.relpath(root, clone_dir).replace("\\", "/")
-                # Prune excluded dirs
-                dirs[:] = [d for d in dirs if not any(ex in os.path.join(rel_root, d) for ex in CODE_EXCLUDE)]
-
-                for fname in files:
-                    ext = os.path.splitext(fname)[1]
-                    if ext not in CODE_EXTENSIONS:
-                        continue
-
-                    abs_path = os.path.join(root, fname)
-                    rel_path = os.path.relpath(abs_path, clone_dir).replace("\\", "/")
-
-                    if any(ex in rel_path for ex in CODE_EXCLUDE):
-                        continue
-
-                    try:
-                        with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
-                            content = f.read()
-                    except Exception:
-                        continue
-
-                    if not content.strip() or len(content) < 50:
-                        continue
-
-                    # Truncate large files to stay within embedding limits
-                    if len(content) > MAX_FILE_CHARS:
-                        content = content[:MAX_FILE_CHARS] + "\n# [truncated]"
-
-                    filetype = _classify_filetype(rel_path, content)
-                    commit_date = _get_commit_date(clone_dir, rel_path)
-
-                    # Metadata header prepended for richer embedding context
-                    doc = f"# repo:{repo_name} file:{rel_path} type:{filetype}\n\n{content}"
-
-                    doc_id = f"{repo_name}::{rel_path}"
-                    docs.append(doc)
-                    metadatas.append({
-                        "repo":        repo_name,
-                        "filepath":    rel_path,
-                        "filetype":    filetype,
-                        "last_commit": commit_date,
-                        "ext":         ext,
-                    })
-                    ids.append(doc_id)
-                    file_count += 1
-
-            repo_stats.append({"repo": repo_name, "files": file_count})
-            logger.info(f"Code ingest: {repo_name} — {file_count} files")
-
-    if not docs:
-        raise HTTPException(status_code=500, detail="No files indexed — all repos failed or empty")
-
-    # Upsert into "code" collection (replaces by id so this is idempotent)
-    total = vector_store.upsert("code", ids=ids, documents=docs, metadatas=metadatas)
-    backup_to_gcs()
-
-    duration = int((time.time() - start) * 1000)
-    return {
-        "status": "ok",
-        "total_files": total,
-        "repos": repo_stats,
-        "skipped_repos": skipped_repos,
-        "duration_ms": duration,
-    }
+    Source ingestion is now handled per-repo by a GitHub Action step that MERGEs
+    into MetaPM's SQL `code_files` table. See
+    https://metapm.rentyourcio.com/api/code-files/status for freshness metadata.
+    """
+    raise HTTPException(status_code=410, detail={
+        "error": "collection_deprecated",
+        "message": (
+            "POST /ingest/code is deprecated. Source code is now ingested to MetaPM "
+            "SQL code_files table by each repo's GitHub Action. Query via "
+            "execute_sql_query MCP tool or GET /api/code-files/status."
+        ),
+        "replacement": (
+            "execute_sql_query database=MetaPM sql=\"SELECT * FROM code_files WHERE app = ?\""
+        ),
+    })
 
 
 class CustomChunk(BaseModel):
